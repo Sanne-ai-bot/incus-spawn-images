@@ -260,6 +260,13 @@ Triggers:
 Releases attach container and VM tarballs for both architectures, plus a
 combined `SHA256SUMS`.
 
+[`.github/workflows/build-vm-scratch.yml`](.github/workflows/build-vm-scratch.yml)
+builds the VM image from scratch with its kernel, for both architectures, on
+every pull request and push to `main` touching `fedora/**`, and boots it with
+incus-spawn's `appliance/test-vm-kernel.sh` (x86_64 under KVM, aarch64 under
+TCG) until it reaches `basic.target`. Its tarballs are artifacts only, never
+released.
+
 [`.github/workflows/test.yml`](.github/workflows/test.yml) (`Test`) runs on
 every pull request and push to `main`. It runs `tests/test-network-watchdog.sh`,
 which checks the network watchdog against stubbed tools and against the
