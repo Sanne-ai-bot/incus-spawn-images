@@ -1,0 +1,14 @@
+# DHCP on the first NIC, as in the stock Incus image. isx writes a static
+# .network file per branch, matched by MAC, that takes precedence.
+[Match]
+Name=enp5s0
+
+[Network]
+DHCP=ipv4
+
+[DHCPv4]
+UseDomains=true
+UseMTU=true
+
+[DHCP]
+ClientIdentifier=mac

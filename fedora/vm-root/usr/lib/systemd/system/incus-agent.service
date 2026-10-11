@@ -1,0 +1,19 @@
+# The incus-agent as the stock Incus images set it up (distrobuilder writes these
+# three files: this unit, 99-incus-agent.rules, incus-agent-setup). The agent
+# itself is not in the image: incus-agent-setup copies it from the config share
+# Incus attaches, so it always matches the host's Incus.
+[Unit]
+Description=Incus - agent
+Documentation=https://linuxcontainers.org/incus/docs/main/
+Before=multi-user.target cloud-init.target cloud-init.service cloud-init-local.service
+DefaultDependencies=no
+
+[Service]
+Type=notify
+WorkingDirectory=-/run/incus_agent
+ExecStartPre=/lib/systemd/incus-agent-setup
+ExecStart=/run/incus_agent/incus-agent
+Restart=on-failure
+RestartSec=5s
+StartLimitInterval=60
+StartLimitBurst=10

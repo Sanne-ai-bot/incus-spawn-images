@@ -12,6 +12,9 @@ The build produces **two image formats** from a single rootfs:
 - **Container image** (`.tar.xz`): rootfs tarball for Incus containers
 - **VM image** (`-vm.tar.xz`): bootable disk image for Incus VMs, based on the stock Incus Fedora image
 
+A third, the [VM image built from scratch](#the-vm-image-built-from-scratch)
+around a kernel of our own, is built and boot-tested in CI but not released yet.
+
 ## What's baked in
 
 The image is a Fedora 44 systemd rootfs bootstrapped directly with
@@ -136,6 +139,82 @@ removed, whatever machine-id named it.
 [`tests/test-stale-boot-entries.sh`](tests/test-stale-boot-entries.sh) runs
 Fedora's own `kernel-install` against it in a container. See
 [Sanne/incus-spawn#1217](https://github.com/Sanne/incus-spawn/issues/1217).
+
+## The VM image built from scratch
+
+[`fedora/build-vm-scratch.sh`](fedora/build-vm-scratch.sh) builds the VM image
+without the stock Incus image, around a kernel of our own
+([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255),
+[#12](https://github.com/Sanne/incus-spawn-images/issues/12)). It boots with no
+boot loader, no initrd and no modules: on one host, 2.4 s to `basic.target`
+against 6.0 s for the image built from the stock one.
+
+**Disk.** A GPT with two partitions, written without loop devices or mounts
+(`sgdisk`, mtools, `mkfs.ext4 -d`), so the build runs in a container:
+
+1. The EFI system partition, holding one file: the kernel, as
+   `EFI/BOOT/BOOTX64.EFI` (`BOOTAA64.EFI`). The firmware starts it by the
+   removable-media path, with no NVRAM entry, and its command line is built in.
+   Linux never mounts this partition.
+2. The root, ext4, with the GPT partition name `isx-root`, which the kernel's
+   command line names (`root=PARTLABEL=isx-root`): the kernel finds it with no
+   initrd and no udev. `/etc/fstab` remounts it read-write and has no
+   `/boot/efi` line.
+
+**Root.** `dnf --installroot` with the container image's packages plus the
+VM's own (`cloud-utils-growpart`, `e2fsprogs` and `xfsprogs` for isx's root
+expansion, `dbus-broker` and `systemd-pam` for logind and `systemctl --user`),
+configured by the same `configure-base.sh`, then overlaid with
+[`fedora/vm-root/`](fedora/vm-root): the incus-agent's unit, udev rule and setup
+script as the stock Incus images have them, DHCP on the first NIC, the fstab
+and the dnf drop-in below. No kernel packages, dracut, GRUB, shim, `/boot` or
+`/lib/modules`, and `/etc/machine-id` says `uninitialized`, so each instance
+gets its own; the build fails otherwise.
+
+**The kernel is the image's.** It is built by
+[`fedora/build-vm-kernel.sh`](fedora/build-vm-kernel.sh) from incus-spawn's
+`appliance/kernel` (`build-kernel.sh vm`) at a pinned commit, so its config has
+one home; a fragment change reaches this image through a bump of that pin. It
+has no modules and no virtio-scsi, so the root disk must be on virtio-blk
+(`io.bus=virtio-blk`); isx sets that from step 4 of
+[Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255) on,
+and until then it is set by hand. Kernel updates arrive with an image rebuild.
+
+**dnf will not install a kernel.**
+`/etc/dnf/libdnf5.conf.d/isx-kernel.conf` excludes `kernel`, `kernel-core`,
+`kernel-modules`, `kernel-modules-core`, `kernel-modules-extra`,
+`kernel-uki-virt` and the rest of the packages that carry a kernel or its
+modules, the debug flavour's included: a Fedora kernel package would put a kernel in `/boot` that
+nothing boots, plus about 100 MB of modules nothing loads. dnf answers
+`dnf install kernel-core` with "matches only excluded packages". Exact
+names, not `kernel*`: `kernel-headers` (needed by `glibc-devel`) and `kernel-devel` stay
+installable. To lift it for one command, `dnf --setopt=excludepkgs= install
+...`; for good, delete the file. Neither makes the box boot that kernel.
+
+**Kernel development** happens in a nested VM inside a `--kvm` branch
+(virtme-ng, or QEMU with `-kernel`), never by replacing the box's own kernel.
+
+**Built locally**, as root in a Fedora 44 container:
+
+```bash
+fedora/build-vm-kernel.sh build/vm-kernel        # needs the kernel build tools
+mkdir -p output && sudo podman run --rm --privileged \
+  -v "$(pwd):/build:ro" -v "$(pwd)/output:/output" fedora:44 \
+  bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz &&
+           bash /build/fedora/build-vm-scratch.sh /output /build/build/vm-kernel/vmlinuz'
+tar xJf output/fedora-44-$(uname -m)-vm-scratch.tar.xz -C output rootfs.img
+build/vm-kernel/incus-spawn/appliance/test-vm-kernel.sh build/vm-kernel/vmlinuz output/rootfs.img
+```
+
+The last command is the boot test CI gates the image with; it needs QEMU, OVMF
+(AAVMF), `sgdisk`, mtools and `debugfs`. The output is
+`output/fedora-44-<arch>-vm-scratch.tar.xz` (+ `.sha256`). To try it in Incus
+by hand, put the root on virtio-blk and Secure Boot off:
+
+```bash
+incus image import output/fedora-44-x86_64-vm-scratch.tar.xz --alias isx-scratch
+incus launch isx-scratch t1 --vm -c security.secureboot=false -d root,io.bus=virtio-blk
+```
 
 ## Building locally
 

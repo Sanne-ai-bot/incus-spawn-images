@@ -1,0 +1,5 @@
+# The root is found by its GPT partition name, as the kernel's built-in command
+# line finds it, and mounted read-only by the kernel; this line remounts it
+# read-write. There is no /boot/efi: the firmware reads the EFI partition, Linux
+# never mounts it (the kernel has no VFAT).
+PARTLABEL=isx-root  /  ext4  defaults  0 0
