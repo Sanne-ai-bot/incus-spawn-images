@@ -14,31 +14,7 @@ echo "=== Building Fedora ${RELEASE} container image for ${ARCH} ==="
 # ============================================================
 
 # Bootstrap a complete systemd-based Fedora rootfs
-echo "Bootstrapping rootfs..."
-dnf --use-host-config \
-    --installroot="${ROOTFS}" \
-    --releasever="${RELEASE}" \
-    --setopt=install_weak_deps=False \
-    --setopt=keepcache=False \
-    --setopt=tsflags=nodocs \
-    --exclude='kernel*' \
-    -y install \
-    systemd systemd-udev systemd-networkd passwd \
-    sudo bash coreutils util-linux dnf5 \
-    glibc-langpack-en bash-completion \
-    git curl which procps-ng findutils \
-    iproute iputils
-
-# Remove bloat packages that ship in the base but aren't needed
-echo "Removing unnecessary packages..."
-dnf --use-host-config --installroot="${ROOTFS}" -y remove \
-    glibc-all-langpacks geolite2-city geolite2-country 2>/dev/null || true
-
-# Run shared base configuration inside the rootfs
-echo "Configuring base system..."
-cp "${SCRIPT_DIR}/configure-base.sh" "${ROOTFS}/tmp/configure-base.sh"
-chroot "${ROOTFS}" bash /tmp/configure-base.sh
-rm -f "${ROOTFS}/tmp/configure-base.sh"
+bash "${SCRIPT_DIR}/bootstrap-rootfs.sh" "${RELEASE}" "${ROOTFS}"
 
 # ============================================================
 # Phase 2: Package container image
