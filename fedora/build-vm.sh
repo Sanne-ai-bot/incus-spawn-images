@@ -115,6 +115,11 @@ mount "${ROOT_DEV}" "${MOUNTPOINT}"
 ROOT_UUID=$(blkid -p -s UUID -o value "${ROOT_DEV}")
 bash "${SCRIPT_DIR}/kernel-cmdline.sh" "${MOUNTPOINT}/etc/kernel/cmdline" "${ROOT_UUID}"
 
+# Removing a kernel removes its boot entry even when the machine that installed
+# it had another machine-id, as the image's own kernel always did
+# (Sanne/incus-spawn#1217). Also before any chroot step.
+install -D -m 0755 -t "${MOUNTPOINT}/etc/kernel/install.d" "${SCRIPT_DIR}"/kernel-install/*.install
+
 # --- Install packages via chroot ---
 echo "Installing packages..."
 
@@ -181,6 +186,12 @@ for entry in "${ENTRIES[@]}"; do
   read -r -a GOT_OPTIONS <<< "$(sed -n 's/^options[[:space:]]*//p' "${entry}" | tr '\n' ' ')"
   if [ "${GOT_OPTIONS[*]}" != "${WANT_OPTIONS[*]}" ]; then
     echo "Error: ${entry#"${MOUNTPOINT}"} boots with '${GOT_OPTIONS[*]}', not /etc/kernel/cmdline's '${WANT_OPTIONS[*]}'"
+    exit 1
+  fi
+done
+for plugin in "${SCRIPT_DIR}"/kernel-install/*.install; do
+  if [ ! -x "${MOUNTPOINT}/etc/kernel/install.d/${plugin##*/}" ]; then
+    echo "Error: the image lacks the kernel-install plugin /etc/kernel/install.d/${plugin##*/}"
     exit 1
   fi
 done

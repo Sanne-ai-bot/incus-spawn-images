@@ -1,0 +1,35 @@
+#!/usr/bin/bash
+# kernel-install plugin, installed in a VM image's /etc/kernel/install.d:
+# removing a kernel removes its boot entries, whatever machine-id named them.
+#
+# Fedora's 20-grub.install names an entry <machine-id>-<version>.conf and removes
+# only the one under the running machine's id. The image's own kernel has the
+# entry of the machine that built the image, and every instance gets a machine-id
+# of its own, so removing that kernel in an instance (a template's `dnf upgrade`
+# past installonly_limit) left the entry behind, pointing at a vmlinuz that no
+# longer exists. GRUB boots the entry that sorts first, so whether an instance
+# then failed to boot was down to its machine-id (Sanne/incus-spawn#1217).
+#
+# Every entry named <machine-id>-<version>.conf goes, and the ~debug copy
+# 20-grub.install makes. It skips what 20-grub.install skips: the case where
+# another boot loader owns the entries, and UKIs, which are not BLS files.
+
+COMMAND="$1"
+KERNEL_VERSION="$2"
+BOOT_DIR_ABS="$3"
+
+[ "${COMMAND}" = remove ] || exit 0
+[ -n "${KERNEL_VERSION}" ] || exit 0
+[ ! -d "${BOOT_DIR_ABS}" ] || exit 0
+[ "${KERNEL_INSTALL_LAYOUT}" != uki ] || exit 0
+[ "${KERNEL_INSTALL_BOOT_ENTRY_TYPE}" != type2 ] || exit 0
+
+for entry in /boot/loader/entries/*.conf; do
+  name="${entry##*/}"
+  # Compared as a string, so a version's dots and pluses are not patterns.
+  [[ "${name}" =~ ^[0-9a-f]{32}-(.*)\.conf$ ]] || continue
+  case "${BASH_REMATCH[1]}" in
+    "${KERNEL_VERSION}" | "${KERNEL_VERSION}~debug") rm -f "${entry}" ;;
+  esac
+done
+exit 0

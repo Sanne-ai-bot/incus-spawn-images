@@ -26,3 +26,6 @@ jobs:
 
       - name: VM boot entries
         run: tests/test-boot-entries.sh
+
+      - name: VM stale boot entries
+        run: tests/test-stale-boot-entries.sh
