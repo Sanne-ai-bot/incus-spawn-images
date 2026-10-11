@@ -119,6 +119,22 @@ entry boots with exactly what that file says, and it names the root by UUID and
 sets a log level. See
 [Sanne/incus-spawn#1238](https://github.com/Sanne/incus-spawn/issues/1238).
 
+**Removing a kernel removes its boot entry in every instance.** Fedora's
+`20-grub.install` names a kernel's boot entry `<machine-id>-<version>.conf` and,
+when the kernel goes, removes only the entry under the running machine's id. The
+image's own kernel has the entry of the machine that built the image, and every
+instance has a machine-id of its own, so a template whose `dnf upgrade`s pushed
+that kernel past `installonly_limit` kept an entry for a `vmlinuz` that no longer
+exists. GRUB boots whichever entry sorts first, so whether the guest then failed
+with ``file `/boot/vmlinuz-...' not found`` was down to its machine-id. The build
+installs the kernel-install plugin
+[`fedora/kernel-install/21-isx-stale-entries.install`](fedora/kernel-install/21-isx-stale-entries.install)
+in `/etc/kernel/install.d`; it removes every entry for the version being
+removed, whatever machine-id named it.
+[`tests/test-stale-boot-entries.sh`](tests/test-stale-boot-entries.sh) runs
+Fedora's own `kernel-install` against it in a container. See
+[Sanne/incus-spawn#1217](https://github.com/Sanne/incus-spawn/issues/1217).
+
 ## Building locally
 
 **Container image** — requires a container runtime with `--privileged`
