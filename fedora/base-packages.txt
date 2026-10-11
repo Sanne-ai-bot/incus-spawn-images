@@ -1,0 +1,20 @@
+# Packages of the base image, container and VM alike: bootstrap-rootfs.sh
+# installs exactly these, plus what the calling build adds.
+systemd
+systemd-udev
+systemd-networkd
+passwd
+sudo
+bash
+coreutils
+util-linux
+dnf5
+glibc-langpack-en
+bash-completion
+git
+curl
+which
+procps-ng
+findutils
+iproute
+iputils

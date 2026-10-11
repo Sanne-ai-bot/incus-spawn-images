@@ -18,7 +18,9 @@ The image is a Fedora 44 systemd rootfs bootstrapped directly with
 `dnf --installroot` (see [`fedora/build.sh`](fedora/build.sh)).
 
 **Packages.** Installed with weak dependencies off (`install_weak_deps=False`)
-and without docs (`tsflags=nodocs`) to keep the image small:
+and without docs (`tsflags=nodocs`) to keep the image small. The list is
+[`fedora/base-packages.txt`](fedora/base-packages.txt), shared with the VM
+image built from scratch:
 
 - Core: `systemd`, `systemd-udevd`, `sudo`, `bash`, `coreutils`, `util-linux`, `passwd`, `dnf5`
 - Networking: `systemd-networkd`, `iproute`, `iputils`
