@@ -1,0 +1,118 @@
+name: Build VM Image From Scratch
+
+# The from-scratch VM image (fedora/build-vm-scratch.sh) with its own kernel
+# (fedora/build-vm-kernel.sh), gated by incus-spawn's VM boot test at the same
+# pinned commit (Sanne/incus-spawn#1255). x86_64 boots under KVM; GitHub's arm64
+# runners expose no /dev/kvm, so aarch64 boots under TCG.
+#
+# Artifacts only, never released: the released VM image stays build-vm.sh's
+# until incus-spawn's integration tests pass on this one.
+
+on:
+  pull_request:
+    paths:
+      - 'fedora/**'
+      - '.github/workflows/build-vm-scratch.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'fedora/**'
+      - '.github/workflows/build-vm-scratch.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  RELEASE: '44'
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+            packages: qemu-system-x86 ovmf
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            packages: qemu-system-arm qemu-efi-aarch64
+    name: build (${{ matrix.arch }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq build-essential flex bison bc libelf-dev libssl-dev \
+            gdisk mtools e2fsprogs qemu-utils ${{ matrix.packages }}
+
+      # The kernel and the incus-spawn checkout it came from (which holds the
+      # boot test) are fixed by the pin in build-vm-kernel.sh: rebuilt only
+      # when that file changes.
+      - name: Restore the cached kernel
+        id: kernel_cache
+        uses: actions/cache/restore@v5
+        with:
+          path: build/vm-kernel/
+          key: vm-kernel-${{ matrix.arch }}-${{ hashFiles('fedora/build-vm-kernel.sh') }}
+
+      - name: Build the kernel
+        if: steps.kernel_cache.outputs.cache-hit != 'true'
+        run: fedora/build-vm-kernel.sh build/vm-kernel ${{ matrix.arch }}
+
+      - name: Cache the kernel
+        if: steps.kernel_cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v5
+        with:
+          path: build/vm-kernel/
+          key: ${{ steps.kernel_cache.outputs.cache-primary-key }}
+
+      - name: Build the VM image
+        run: |
+          mkdir -p output
+          podman run --rm --privileged \
+            -v "${{ github.workspace }}:/build:ro" \
+            -v "${{ github.workspace }}/output:/output" \
+            fedora:${{ env.RELEASE }} \
+            bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz >/dev/null &&
+                     bash /build/fedora/build-vm-scratch.sh /output /build/build/vm-kernel/vmlinuz'
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+          if [ -r /dev/kvm ] && [ -w /dev/kvm ]; then echo "KVM is available"; else echo "No KVM: booting under TCG emulation"; fi
+
+      # The disk out of the tarball. The test rewrites its ESP and partition
+      # name on the copy it boots; build-vm-scratch.sh checks those itself.
+      - name: Boot test
+        run: |
+          mkdir -p build/vm-image
+          tar xJf output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm-scratch.tar.xz -C build/vm-image rootfs.img
+          RUNS=${{ matrix.arch == 'x86_64' && '3' || '1' }} \
+          CONSOLE_DIR=build/vm-boot PLOT_DIR=build/vm-boot \
+            build/vm-kernel/incus-spawn/appliance/test-vm-kernel.sh \
+            build/vm-kernel/vmlinuz build/vm-image/rootfs.img ${{ matrix.arch }}
+
+      - name: Upload VM artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm-scratch
+          path: |
+            output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm-scratch.tar.xz
+            output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm-scratch.tar.xz.sha256
+
+      - name: Upload console logs and plots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: vm-boot-${{ matrix.arch }}
+          path: build/vm-boot/
+          retention-days: 14
+          if-no-files-found: ignore
