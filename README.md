@@ -168,8 +168,12 @@ configured by the same `configure-base.sh`, then overlaid with
 [`fedora/vm-root/`](fedora/vm-root): the incus-agent's unit, udev rule and setup
 script as the stock Incus images have them, DHCP on the first NIC, the fstab
 and the dnf drop-in below. No kernel packages, dracut, GRUB, shim, `/boot` or
-`/lib/modules`, and `/etc/machine-id` says `uninitialized`, so each instance
-gets its own; the build fails otherwise.
+module files, and `/etc/machine-id` says `uninitialized`, so each instance
+gets its own; the build fails otherwise. `/usr/lib/modules/<release>/` holds
+only the kernel's index of its built-in drivers (`modules.builtin`, from
+`build-kernel.sh vm`) and what `depmod` makes of it, so `modprobe` of a
+built-in driver succeeds: Incus runs VMs only once `modprobe vhost_vsock`
+does, which a nested Incus in a `--kvm` branch needs.
 
 **The kernel is the image's.** It is built by
 [`fedora/build-vm-kernel.sh`](fedora/build-vm-kernel.sh) from incus-spawn's
@@ -200,7 +204,7 @@ installable. To lift it for one command, `dnf --setopt=excludepkgs= install
 fedora/build-vm-kernel.sh build/vm-kernel        # needs the kernel build tools
 mkdir -p output && sudo podman run --rm --privileged \
   -v "$(pwd):/build:ro" -v "$(pwd)/output:/output" fedora:44 \
-  bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz &&
+  bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz kmod &&
            bash /build/fedora/build-vm-scratch.sh /output /build/build/vm-kernel/vmlinuz'
 tar xJf output/fedora-44-$(uname -m)-vm-scratch.tar.xz -C output rootfs.img
 build/vm-kernel/incus-spawn/appliance/test-vm-kernel.sh build/vm-kernel/vmlinuz output/rootfs.img
