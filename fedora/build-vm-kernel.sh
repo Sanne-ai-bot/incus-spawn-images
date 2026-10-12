@@ -11,7 +11,9 @@ set -euo pipefail
 # image with.
 #
 # Usage: build-vm-kernel.sh <output-dir> [arch]
-# Output: <output-dir>/vmlinuz, and the checkout in <output-dir>/incus-spawn.
+# Output: <output-dir>/vmlinuz with its modules.builtin, modules.builtin.modinfo
+# and kernelrelease (build-vm-scratch.sh installs the index of built-in
+# drivers), and the checkout in <output-dir>/incus-spawn.
 #
 # Requirements: git, and build-kernel.sh's: build-essential flex bison bc
 # libelf-dev libssl-dev (Fedora: gcc make flex bison bc elfutils-libelf-devel
@@ -21,7 +23,7 @@ set -euo pipefail
 # then the tag of that release. A change to the fragments reaches this image only
 # through a bump here.
 ISX_REPO=https://github.com/Sanne/incus-spawn.git
-ISX_REF=4378c2f8c54561e9104846a4f088731da163c2c6
+ISX_REF=2b08cfde4dda4017110da199bc111e3cdb6ebb15
 
 OUTPUT="${1:?Usage: $0 <output-dir> [arch]}"
 ARCH="${2:-$(uname -m)}"

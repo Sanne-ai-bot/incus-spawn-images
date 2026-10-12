@@ -78,7 +78,7 @@ jobs:
             -v "${{ github.workspace }}:/build:ro" \
             -v "${{ github.workspace }}/output:/output" \
             fedora:${{ env.RELEASE }} \
-            bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz >/dev/null &&
+            bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz kmod >/dev/null &&
                      bash /build/fedora/build-vm-scratch.sh /output /build/build/vm-kernel/vmlinuz'
 
       - name: Enable KVM

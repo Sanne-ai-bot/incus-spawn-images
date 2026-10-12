@@ -12,7 +12,10 @@ set -euo pipefail
 #      bootstrapped by bootstrap-rootfs.sh, as the container image's root is,
 #      with the VM's own packages added, and overlaid with vm-root/ (the incus-agent units, DHCP on the first NIC,
 #      fstab, the dnf kernel exclusion). No kernel packages, dracut, GRUB, shim,
-#      /boot/loader or /lib/modules.
+#      /boot/loader or module files: /usr/lib/modules/<release>/ holds only the
+#      kernel's index of built-in drivers, with depmod's output, so that
+#      modprobe of one succeeds (Incus runs VMs only once
+#      `modprobe vhost_vsock` does).
 # The kernel is built by build-vm-kernel.sh and boots only on virtio-blk: it has
 # no virtio-scsi, which is Incus's default root bus.
 #
@@ -21,10 +24,12 @@ set -euo pipefail
 # container (podman --privileged, for the chroot) and on GitHub runners.
 #
 # Usage: build-vm-scratch.sh <output-dir> <vmlinuz>
+# Beside <vmlinuz>, build-kernel.sh vm leaves modules.builtin,
+# modules.builtin.modinfo and kernelrelease; all three are required.
 # Output: <output-dir>/fedora-44-<arch>-vm-scratch.tar.xz (+ .sha256), an Incus
 # unified tarball (metadata.yaml + rootfs.img, qcow2).
 #
-# Run as root in fedora:44, with: gdisk mtools e2fsprogs qemu-img xz
+# Run as root in fedora:44, with: gdisk mtools e2fsprogs qemu-img xz kmod
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT="${1:?Usage: $0 <output-dir> <vmlinuz>}"
@@ -48,16 +53,22 @@ case "${ARCH}" in
 esac
 
 [ -f "${KERNEL}" ] || { echo "Error: kernel not found: ${KERNEL}"; exit 1; }
+KERNEL_DIR="$(dirname "${KERNEL}")"
+for f in modules.builtin modules.builtin.modinfo kernelrelease; do
+  [ -f "${KERNEL_DIR}/${f}" ] || { echo "Error: ${f} not found beside the kernel (build-kernel.sh vm writes it)"; exit 1; }
+done
+KERNEL_RELEASE=$(cat "${KERNEL_DIR}/kernelrelease")
+[[ "${KERNEL_RELEASE}" =~ ^[A-Za-z0-9._+-]+$ ]] || { echo "Error: unexpected kernelrelease: ${KERNEL_RELEASE}"; exit 1; }
 if [ "$(id -u)" -ne 0 ]; then
   echo "Error: must run as root (dnf --installroot and chroot)"
   exit 1
 fi
 MISSING=()
-for cmd in dnf sgdisk mformat mmd mcopy mdir mkfs.ext4 debugfs qemu-img xz; do
+for cmd in dnf sgdisk mformat mmd mcopy mdir mkfs.ext4 debugfs qemu-img xz depmod modprobe; do
   command -v "$cmd" >/dev/null 2>&1 || MISSING+=("$cmd")
 done
 if [ ${#MISSING[@]} -gt 0 ]; then
-  echo "Error: missing required tools: ${MISSING[*]} (gdisk mtools e2fsprogs qemu-img xz)"
+  echo "Error: missing required tools: ${MISSING[*]} (gdisk mtools e2fsprogs qemu-img xz kmod)"
   exit 1
 fi
 
@@ -78,6 +89,19 @@ cp -R --no-preserve=ownership "${SCRIPT_DIR}/vm-root/." "${ROOTFS}/"
 # systemd generate one on each instance's first boot.
 echo uninitialized > "${ROOTFS}/etc/machine-id"
 
+echo "Indexing the kernel's built-in drivers (${KERNEL_RELEASE})..."
+MODDIR="${ROOTFS}/usr/lib/modules/${KERNEL_RELEASE}"
+mkdir -p "${MODDIR}"
+cp "${KERNEL_DIR}/modules.builtin" "${KERNEL_DIR}/modules.builtin.modinfo" "${MODDIR}/"
+# depmod reads <base>/lib/modules, which is the root's /lib -> usr/lib link.
+# It warns that there is no modules.order: there are no modules to order.
+if ! DEPMOD_LOG=$(depmod -b "${ROOTFS}" "${KERNEL_RELEASE}" 2>&1); then
+  echo "${DEPMOD_LOG}"
+  echo "Error: depmod failed"
+  exit 1
+fi
+grep -v 'could not open modules.order' <<<"${DEPMOD_LOG}" || true
+
 # ---- Checks: fail loudly rather than ship an image that boots the wrong way ----
 
 fail() { echo "Error: $*"; exit 1; }
@@ -85,7 +109,13 @@ fail() { echo "Error: $*"; exit 1; }
 FORBIDDEN=$(rpm --root="${ROOTFS}" -qa --qf '%{NAME}\n' \
   | grep -E '^(kernel|kernel-core|kernel-modules.*|kernel-uki-virt.*|kernel-debug|kernel-debug-(core|modules.*|uki-virt)|dracut.*|grub2.*|shim.*|systemd-boot.*)$' || true)
 [ -z "${FORBIDDEN}" ] || fail "the image has boot packages it must not have: ${FORBIDDEN//$'\n'/ }"
-[ -z "$(ls -A "${ROOTFS}/usr/lib/modules" 2>/dev/null)" ] || fail "the image has /usr/lib/modules content"
+[ "$(ls -A "${ROOTFS}/usr/lib/modules")" = "${KERNEL_RELEASE}" ] \
+  || fail "/usr/lib/modules holds more than ${KERNEL_RELEASE}: $(ls -A "${ROOTFS}/usr/lib/modules" | tr '\n' ' ')"
+MODULE_FILES=$(find "${ROOTFS}/usr/lib/modules" \( -name '*.ko' -o -name '*.ko.*' -o -type d ! -path "${MODDIR}" ! -path "${ROOTFS}/usr/lib/modules" \) -print)
+[ -z "${MODULE_FILES}" ] || fail "the image has module files or directories: ${MODULE_FILES//$'\n'/ }"
+# What Incus asks before it runs VMs, answered from the image's own index.
+modprobe -d "${ROOTFS}" -S "${KERNEL_RELEASE}" -n vhost_vsock \
+  || fail "modprobe in the image does not find the built-in vhost_vsock"
 [ -z "$(ls -A "${ROOTFS}/boot" 2>/dev/null)" ] || fail "the image has /boot content"
 grep -q '[[:space:]]/boot/efi[[:space:]]' "${ROOTFS}/etc/fstab" && fail "/etc/fstab mounts /boot/efi"
 grep -Eq "^PARTLABEL=${ROOT_PARTLABEL}[[:space:]]+/[[:space:]]" "${ROOTFS}/etc/fstab" \
