@@ -29,3 +29,6 @@ jobs:
 
       - name: VM stale boot entries
         run: tests/test-stale-boot-entries.sh
+
+      - name: ISX_REF bump
+        run: tests/test-update-isx-ref.sh

@@ -1,0 +1,146 @@
+name: Update ISX_REF
+
+# Proposes moving fedora/build-vm-kernel.sh's ISX_REF to the newest commit on incus-spawn's main
+# that changed what this repo builds from it, ISX_INPUTS: the VM kernel's sources, its pin and
+# the boot test (Sanne/incus-spawn#1355). A kernel bump merged there reaches the VM image through
+# this, and then the next release.
+#
+# There is one PR at a time, on bot/isx-ref: a later change replaces its commit and title, and a
+# ref whose PR was closed unmerged is not proposed again. The PR's own CI (build-vm-scratch.yml)
+# builds that kernel, its sum checked by build-kernel.sh, and boots it. Nothing merges by itself.
+# A failed run opens an issue, which the next good run closes.
+
+on:
+  schedule:
+    - cron: '23 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: update-isx-ref
+  cancel-in-progress: false
+
+jobs:
+  bump:
+    if: github.repository == 'Sanne/incus-spawn-images'
+    runs-on: ubuntu-latest
+    steps:
+      # A PR opened with GITHUB_TOKEN runs no CI, and this PR's CI is its boot test.
+      - name: Require BOT_TOKEN
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+        run: |
+          [ -n "$BOT_TOKEN" ] || { echo "::error::The BOT_TOKEN secret is not set: a PR opened without it would run no boot test."; exit 1; }
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ secrets.BOT_TOKEN }}
+
+      - name: Find the newest ref
+        id: ref
+        run: |
+          set -euo pipefail
+          fedora/update-isx-ref.sh > "$RUNNER_TEMP/isx-ref"
+          read -r old new < "$RUNNER_TEMP/isx-ref" || true
+          echo "old=${old:-}" >> "$GITHUB_OUTPUT"
+          echo "new=${new:-}" >> "$GITHUB_OUTPUT"
+          echo "ISX_REF: ${old:-current}${new:+ -> $new}"
+
+      - name: Open or refresh the bump PR
+        env:
+          GH_TOKEN: ${{ secrets.BOT_TOKEN }}
+          OLD: ${{ steps.ref.outputs.old }}
+          NEW: ${{ steps.ref.outputs.new }}
+        run: |
+          set -euo pipefail
+          BRANCH=bot/isx-ref
+          # This repository's own branch: a fork's branch of the same name is someone else's PR.
+          OURS='select(.headRepositoryOwner.login == "Sanne" and .isCrossRepository == false)'
+          OPEN=$(gh pr list --head "$BRANCH" --state open --json number,headRepositoryOwner,isCrossRepository \
+            --jq "[.[] | $OURS][0].number // empty")
+
+          if [[ -z "$NEW" ]]; then
+            # main already builds from main's inputs, so an open bump is stale.
+            if [[ -n "$OPEN" ]]; then
+              # Without its marker, so it never reads as declined.
+              gh pr edit "$OPEN" --body "$(gh pr view "$OPEN" --json body --jq .body | grep -v '^<!-- update-isx-ref.yml: ')"
+              gh pr close "$OPEN" --delete-branch --comment "ISX_REF on main already has incus-spawn main's ISX_INPUTS, so this bump is no longer needed."
+            fi
+            echo "ISX_REF is current."
+            exit 0
+          fi
+
+          # Read from the branch, not the title: it stands while it brings main's build-vm-kernel.sh
+          # to this one, and is rebuilt once main's has changed under it.
+          if [[ -n "$OPEN" ]] && git fetch -q --depth 2 origin "$BRANCH"; then
+            if git diff --quiet FETCH_HEAD -- fedora/build-vm-kernel.sh \
+                && git diff --quiet FETCH_HEAD~1 HEAD -- fedora/build-vm-kernel.sh; then
+              echo "#$OPEN already proposes $NEW."
+              exit 0
+            fi
+            # A commit someone added to the branch is not this job's to throw away.
+            if [[ "$(git log -1 --format=%ae FETCH_HEAD)" != "github-actions[bot]@users.noreply.github.com" ]]; then
+              echo "::error::bot/isx-ref has a commit this job did not make, so #$OPEN is not refreshed to $NEW; rebase or close it by hand."
+              exit 1
+            fi
+          fi
+          # A declined ref is recognised by the marker this step puts in its PR's body.
+          SHORT=${NEW:0:12}
+          TITLE="Build the VM kernel from incus-spawn $SHORT"
+          MARKER="<!-- update-isx-ref.yml: $NEW -->"
+          declined=$(gh pr list --head "$BRANCH" --state closed --limit 200 --json body,mergedAt,headRepositoryOwner,isCrossRepository \
+            --jq "[.[] | $OURS | select(.mergedAt == null and (.body | contains(\"$MARKER\")))] | length")
+          if [[ "$declined" != 0 ]]; then
+            echo "A PR for $NEW was closed unmerged; waiting for the next change."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -q -m "Pin build-vm-kernel.sh to incus-spawn $SHORT" \
+            -m "The newest commit on incus-spawn's main that changed ISX_INPUTS (update-isx-ref.sh)." -- fedora/build-vm-kernel.sh
+          git push --force origin "$BRANCH"
+
+          # Subjects in code spans: their #123 and @name belong to incus-spawn, not to this repository.
+          CHANGES=$(tail -n +2 "$RUNNER_TEMP/isx-ref" | while read -r sha subject; do
+            echo "- [\`${sha:0:12}\`](https://github.com/Sanne/incus-spawn/commit/$sha) \`${subject//\`/}\`"
+          done)
+          BODY="Moves \`ISX_REF\` in \`fedora/build-vm-kernel.sh\` from [\`${OLD:0:12}\`](https://github.com/Sanne/incus-spawn/commit/$OLD) to [\`$SHORT\`](https://github.com/Sanne/incus-spawn/commit/$NEW), the newest commit on incus-spawn's main that changed \`ISX_INPUTS\` (Sanne/incus-spawn#1355). These changed them:
+
+          $CHANGES
+
+          This PR's \`build-vm-scratch.yml\` builds that kernel, its source checked against the \`KERNEL_SHA256\` it pins, and boots it. Once merged, the next release (\`build-fedora.yml\`, on the 1st, 11th and 21st, or by hand) ships it.
+
+          $MARKER"
+
+          if [[ -n "$OPEN" ]]; then
+            gh pr edit "$OPEN" --title "$TITLE" --body "$BODY"
+            gh pr comment "$OPEN" --body "Rebuilt as $SHORT on the current main."
+          else
+            gh pr create --base main --head "$BRANCH" --title "$TITLE" --body "$BODY"
+          fi
+
+      # One issue for a failing job, opened on the first failure and closed by the next good run.
+      - name: Track a failing run
+        if: success() || failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ job.status }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          TITLE="[isx-ref] update check failing"
+          n=$(gh issue list --state open --search "in:title \"$TITLE\"" --json number,title --jq "[.[] | select(.title == \"$TITLE\") | .number][0] // empty")
+          if [[ "$STATUS" == success ]]; then
+            [[ -z "$n" ]] || gh issue close "$n" --comment "Passing again: $RUN"
+          elif [[ -n "$n" ]]; then
+            gh issue comment "$n" --body "Failed again: $RUN"
+          else
+            gh issue create --title "$TITLE" --body "update-isx-ref.yml failed: $RUN
+
+          Until it passes, kernel changes merged in incus-spawn do not reach the VM image. An \`ISX_REF\` that is not on incus-spawn's main fails closed, as does a missing \`BOT_TOKEN\` (Sanne/incus-spawn#1355). The next good run closes this issue."
+          fi

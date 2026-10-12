@@ -188,7 +188,30 @@ one home; a fragment change reaches this image through a bump of that pin. It
 has no modules and no virtio-scsi, so the root disk must be on virtio-blk
 (`io.bus=virtio-blk`); isx sets that from step 4 of
 [Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255) on,
-and until then it is set by hand. Kernel updates arrive with an image rebuild.
+and until then it is set by hand.
+
+**Kernel updates arrive through the pin, not with a rebuild.** A rebuild ships
+the kernel `ISX_REF` names, every time. incus-spawn's `update-kernel.yml`
+proposes each kernel.org stable release of its pinned series there, with the
+sum from kernel.org's signed `sha256sums.asc`
+([Sanne/incus-spawn#1355](https://github.com/Sanne/incus-spawn/issues/1355)).
+Once that merges, this repo's
+[`update-isx-ref.yml`](.github/workflows/update-isx-ref.yml) proposes the pin:
+daily, [`fedora/update-isx-ref.sh`](fedora/update-isx-ref.sh) moves `ISX_REF`
+to the newest commit on incus-spawn's main that changed `ISX_INPUTS`
+(`build-kernel.sh`, the fragments and the boot test), when their content at
+`ISX_REF` differs. The ref is
+an immutable commit on main, never a release tag, so a fix does not wait for an
+isx release. `ISX_INPUTS` is also all `build-vm-kernel.sh` checks out (a sparse
+checkout), so a new input fails the build until it is listed, and with it
+tracked. There is one PR at a time, on `bot/isx-ref`, refreshed by a later
+change unless someone else has pushed to it; a ref whose PR was closed unmerged
+is not proposed again; a failed run
+opens an `[isx-ref] update check failing` issue that the next good run closes.
+The PR's `build-vm-scratch.yml` builds and boots that kernel; once merged, the
+next scheduled release ships it, or a manual dispatch of `build-fedora.yml` for
+an urgent fix. The job needs a `BOT_TOKEN` secret: a PR opened with
+`GITHUB_TOKEN` would run no CI, and so no boot test.
 
 **dnf will not install a kernel.**
 `/etc/dnf/libdnf5.conf.d/isx-kernel.conf` excludes `kernel`, `kernel-core`,
@@ -282,9 +305,12 @@ workflow, so a release ships its tarballs as `-vm-direct.tar.xz` only when that
 boot test passed; a failed one fails the whole release.
 
 [`.github/workflows/test.yml`](.github/workflows/test.yml) (`Test`) runs on
-every pull request and push to `main`. It runs `tests/test-network-watchdog.sh`,
-which checks the network watchdog against stubbed tools and against the
-runner's real `ip`. It needs no root and builds no image.
+every pull request and push to `main`. It runs the scripts in `tests/`:
+`test-network-watchdog.sh`, which checks the network watchdog against stubbed
+tools and against the runner's real `ip`; the VM kernel command line and boot
+entry checks; and `test-update-isx-ref.sh`, which runs `update-isx-ref.sh`, the
+sparse checkout and `update-isx-ref.yml`'s PR step against a fixture
+incus-spawn repository. It builds no image.
 
 ## Testing locally with incus-spawn
 
