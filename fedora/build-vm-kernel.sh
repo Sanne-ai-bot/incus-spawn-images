@@ -19,11 +19,19 @@ set -euo pipefail
 # libelf-dev libssl-dev (Fedora: gcc make flex bison bc elfutils-libelf-devel
 # openssl-devel).
 
-# A commit, not a tag, until an incus-spawn release carries `build-kernel.sh vm`;
-# then the tag of that release. A change to the fragments reaches this image only
-# through a bump here.
+# An immutable commit on incus-spawn's main, not a release tag, so a kernel fix
+# reaches this image without waiting for an isx release (#1355). A change to the
+# kernel or its boot test reaches the image only through a bump here, which
+# update-isx-ref.yml proposes daily: fedora/update-isx-ref.sh moves ISX_REF to
+# the newest main commit that changed ISX_INPUTS.
 ISX_REPO=https://github.com/Sanne/incus-spawn.git
 ISX_REF=2b08cfde4dda4017110da199bc111e3cdb6ebb15
+# Everything this build reads from that checkout, and all it checks out:
+# build-kernel.sh and the fragments it builds from, and the boot test
+# build-vm-scratch.yml runs. A file outside these is missing, so a new input
+# fails the build until it is listed here, where update-isx-ref.sh sees its
+# changes too; the rest of appliance/kernel/ is the appliance's tooling.
+ISX_INPUTS="appliance/kernel/build-kernel.sh appliance/kernel/*.config appliance/test-vm-kernel.sh"
 
 OUTPUT="${1:?Usage: $0 <output-dir> [arch]}"
 ARCH="${2:-$(uname -m)}"
@@ -33,6 +41,11 @@ SRC="${OUTPUT}/incus-spawn"
 
 rm -rf "${SRC}"
 git init -q "${SRC}"
+# The patterns go to git unexpanded: ISX_INPUTS is a list of paths and globs.
+set -f
+# shellcheck disable=SC2086
+git -C "${SRC}" sparse-checkout set --no-cone $(printf '/%s\n' ${ISX_INPUTS})
+set +f
 git -C "${SRC}" fetch -q --depth 1 "${ISX_REPO}" "${ISX_REF}"
 git -C "${SRC}" -c advice.detachedHead=false checkout -q FETCH_HEAD
 
