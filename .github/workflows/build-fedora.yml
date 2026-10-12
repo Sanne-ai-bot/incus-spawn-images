@@ -15,6 +15,7 @@ on:
     paths:
       - 'fedora/**'
       - '.github/workflows/build-fedora.yml'
+      - '.github/workflows/build-vm-scratch.yml'
 
 env:
   RELEASE: '44'
@@ -67,8 +68,13 @@ jobs:
             output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm.tar.xz
             output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm.tar.xz.sha256
 
+  # The VM image built from scratch, with its boot test as the gate: released as
+  # -vm-direct.tar.xz beside the stock-based -vm.tar.xz above, never in place of it.
+  build-vm-direct:
+    uses: ./.github/workflows/build-vm-scratch.yml
+
   release:
-    needs: build
+    needs: [build, build-vm-direct]
     runs-on: ubuntu-latest
     if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
     permissions:
@@ -94,6 +100,23 @@ jobs:
           done
           cat SHA256SUMS
 
+          # Everything below leaves SHA256SUMS and the four assets above as they were:
+          # isx releases before the v2 reader file any name containing -vm in
+          # SHA256SUMS as the VM image, so the image built from scratch is listed
+          # only in SHA256SUMS.v2, which lists all six.
+          cp SHA256SUMS SHA256SUMS.v2
+          for arch in x86_64 aarch64; do
+            src="../artifacts/fedora-${{ env.RELEASE }}-${arch}-vm-scratch/fedora-${{ env.RELEASE }}-${arch}-vm-scratch.tar.xz"
+            cp "$src" "fedora-${{ env.RELEASE }}-${arch}-vm-direct.tar.xz"
+            echo "$(cat "$src.sha256")  fedora-${{ env.RELEASE }}-${arch}-vm-direct.tar.xz" >> SHA256SUMS.v2
+          done
+          cat SHA256SUMS.v2
+          # Every listed checksum is that of the file published under its name.
+          sha256sum --strict -c SHA256SUMS.v2
+          [ "$(wc -l < SHA256SUMS)" = 4 ] && [ "$(wc -l < SHA256SUMS.v2)" = 6 ] \
+            || { echo "SHA256SUMS must list 4 assets and SHA256SUMS.v2 6"; exit 1; }
+          if grep -q -- '-vm-direct' SHA256SUMS; then echo "SHA256SUMS lists -vm-direct"; exit 1; fi
+
       - name: Determine version tag
         id: version
         run: |
@@ -114,15 +137,22 @@ jobs:
             Pre-baked with: agentuser, base packages, systemd service masks, resolved disabled.
 
             **Container image** (`.tar.xz`): rootfs tarball for Incus containers.
-            **VM image** (`-vm.tar.xz`): qcow2 disk image for Incus VMs, based on the stock Incus Fedora image.
+            **VM image** (`-vm-direct.tar.xz`): disk image for Incus VMs, built from scratch around incus-spawn's own kernel, which the firmware starts directly: no boot loader, no initrd, no modules. It needs the root disk on virtio-blk and Secure Boot off, both of which isx sets from the release that reads `SHA256SUMS.v2` on. Listed only in `SHA256SUMS.v2`.
 
-            **Usage:** Update `image_url`, `vm_image_url`, and SHA256 fields in `incus-spawn`'s `minimal.yaml` to point to these assets.
+            **Legacy VM image** (`-vm.tar.xz`): disk image built from the stock Incus Fedora image, for isx releases that read only `SHA256SUMS`. Unchanged, and listed in `SHA256SUMS` as before.
+
+            **Checksums:** `SHA256SUMS` lists the container and legacy VM images, exactly as before; `SHA256SUMS.v2` lists all six assets.
+
+            **Usage:** isx tracks the newest release by itself; the automated bump in `incus-spawn` updates the built-in fallback in `minimal.yaml`.
           files: |
             release/fedora-${{ env.RELEASE }}-x86_64.tar.xz
             release/fedora-${{ env.RELEASE }}-aarch64.tar.xz
             release/fedora-${{ env.RELEASE }}-x86_64-vm.tar.xz
             release/fedora-${{ env.RELEASE }}-aarch64-vm.tar.xz
+            release/fedora-${{ env.RELEASE }}-x86_64-vm-direct.tar.xz
+            release/fedora-${{ env.RELEASE }}-aarch64-vm-direct.tar.xz
             release/SHA256SUMS
+            release/SHA256SUMS.v2
 
       # Push model: tell incus-spawn a new base image is available, carrying the tag
       # and checksums we just computed so it doesn't have to poll or re-parse them.
@@ -141,15 +171,18 @@ jobs:
             exit 0
           fi
 
-          sha_for() { awk -v f="$1" '$2 == f { print $1 }' release/SHA256SUMS; }
+          sha_for() { awk -v f="$1" '$2 == f { print $1 }' release/SHA256SUMS.v2; }
           C_X86="$(sha_for "fedora-${RELEASE}-x86_64.tar.xz")"
           C_ARM="$(sha_for "fedora-${RELEASE}-aarch64.tar.xz")"
           V_X86="$(sha_for "fedora-${RELEASE}-x86_64-vm.tar.xz")"
           V_ARM="$(sha_for "fedora-${RELEASE}-aarch64-vm.tar.xz")"
+          D_X86="$(sha_for "fedora-${RELEASE}-x86_64-vm-direct.tar.xz")"
+          D_ARM="$(sha_for "fedora-${RELEASE}-aarch64-vm-direct.tar.xz")"
 
           for pair in "tag:$TAG" \
                       "container/x86_64:$C_X86" "container/aarch64:$C_ARM" \
-                      "vm/x86_64:$V_X86" "vm/aarch64:$V_ARM"; do
+                      "vm/x86_64:$V_X86" "vm/aarch64:$V_ARM" \
+                      "vm_direct/x86_64:$D_X86" "vm_direct/aarch64:$D_ARM"; do
             val="${pair#*:}"
             if [[ -z "$val" ]]; then
               echo "Missing ${pair%%:*}; not notifying incus-spawn." >&2
@@ -161,12 +194,14 @@ jobs:
             --arg tag "$TAG" \
             --arg cx "$C_X86" --arg ca "$C_ARM" \
             --arg vx "$V_X86" --arg va "$V_ARM" \
+            --arg dx "$D_X86" --arg da "$D_ARM" \
             '{event_type: "base-image-released",
               client_payload: {
                 tag: $tag,
                 sha256: {
                   container: {x86_64: $cx, aarch64: $ca},
-                  vm: {x86_64: $vx, aarch64: $va}
+                  vm: {x86_64: $vx, aarch64: $va},
+                  vm_direct: {x86_64: $dx, aarch64: $da}
                 }
               }}')"
 

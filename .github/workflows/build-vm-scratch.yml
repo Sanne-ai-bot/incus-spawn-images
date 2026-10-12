@@ -5,19 +5,18 @@ name: Build VM Image From Scratch
 # pinned commit (Sanne/incus-spawn#1255). x86_64 boots under KVM; GitHub's arm64
 # runners expose no /dev/kvm, so aarch64 boots under TCG.
 #
-# Artifacts only, never released: the released VM image stays build-vm.sh's
-# until incus-spawn's integration tests pass on this one.
+# Released by build-fedora.yml, which calls this workflow, as
+# fedora-44-<arch>-vm-direct.tar.xz, listed only in SHA256SUMS.v2: SHA256SUMS
+# and -vm.tar.xz stay build-vm.sh's, what isx releases before the v2 reader
+# parse (Sanne/incus-spawn#1255). A push to main runs it through
+# build-fedora.yml; on its own it runs for pull requests and by hand.
 
 on:
   pull_request:
     paths:
       - 'fedora/**'
       - '.github/workflows/build-vm-scratch.yml'
-  push:
-    branches: [main]
-    paths:
-      - 'fedora/**'
-      - '.github/workflows/build-vm-scratch.yml'
+  workflow_call:
   workflow_dispatch:
 
 permissions:
