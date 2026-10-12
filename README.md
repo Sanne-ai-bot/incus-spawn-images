@@ -146,6 +146,21 @@ removed, whatever machine-id named it.
 Fedora's own `kernel-install` against it in a container. See
 [Sanne/incus-spawn#1217](https://github.com/Sanne/incus-spawn/issues/1217).
 
+**A kernel a template installs is the one that boots.** GRUB's `blscfg` orders
+entries by that same machine-id before their version, and boots the first. A
+kernel a template's build installed was filed under the build instance's id, so
+whether its branches booted it or the image's older kernel was down to two
+random ids. The build runs
+[`fedora/kernel-install-id.sh`](fedora/kernel-install-id.sh), which writes
+`KERNEL_INSTALL_MACHINE_ID=<the image's entry id>` into `/etc/machine-info`.
+`kernel-install`, and Fedora's `20-grub.install` with it, then names every later
+entry by that id, in every instance, so the newest version sorts first; each
+instance keeps its own machine-id.
+[`tests/test-kernel-install-id.sh`](tests/test-kernel-install-id.sh) checks it
+with Fedora's `kernel-install` in a container. The VM image built from scratch
+has no boot entries: its kernel is the ESP's only file, and dnf in it refuses
+kernel packages, so a template cannot change its kernel at all.
+
 ## The VM image built from scratch
 
 [`fedora/build-vm-scratch.sh`](fedora/build-vm-scratch.sh) builds the VM image
