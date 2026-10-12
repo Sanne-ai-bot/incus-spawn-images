@@ -8,12 +8,18 @@ no longer depend on the linuxcontainers.org image server and skip the repeated
 per-build provisioning, so spinning up a fresh container is faster and more
 reproducible.
 
-The build produces **two image formats** from a single rootfs:
+Each release carries three images, for both architectures:
 - **Container image** (`.tar.xz`): rootfs tarball for Incus containers
-- **VM image** (`-vm.tar.xz`): bootable disk image for Incus VMs, based on the stock Incus Fedora image
+- **VM image** (`-vm-direct.tar.xz`): the [VM image built from scratch](#the-vm-image-built-from-scratch)
+  around a kernel of our own, listed only in `SHA256SUMS.v2`
+- **Legacy VM image** (`-vm.tar.xz`): bootable disk image for Incus VMs, based on
+  the stock Incus Fedora image, for isx releases that read only `SHA256SUMS`
 
-A third, the [VM image built from scratch](#the-vm-image-built-from-scratch)
-around a kernel of our own, is built and boot-tested in CI but not released yet.
+`SHA256SUMS` lists the container and legacy VM images and nothing else, exactly as
+before `-vm-direct` existed: isx releases before the `SHA256SUMS.v2` reader
+([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255)) take
+any name containing `-vm` in it for the VM image, so one more line would overwrite
+a checksum they use. `SHA256SUMS.v2` lists all six, in the same format.
 
 ## What's baked in
 
@@ -261,15 +267,19 @@ Triggers:
 - **Manual dispatch** — optionally pass a `version` tag (e.g. `fedora-44-v2`)
   and publishes a release.
 
-Releases attach container and VM tarballs for both architectures, plus a
-combined `SHA256SUMS`.
+Releases attach the container, VM and legacy VM tarballs for both architectures,
+plus `SHA256SUMS` (container and legacy VM only) and `SHA256SUMS.v2` (all six).
+The release job checks every line of `SHA256SUMS.v2` against the file published
+under its name (`sha256sum -c`), and that `SHA256SUMS` names no `-vm-direct`
+asset, before it publishes anything.
 
 [`.github/workflows/build-vm-scratch.yml`](.github/workflows/build-vm-scratch.yml)
 builds the VM image from scratch with its kernel, for both architectures, on
-every pull request and push to `main` touching `fedora/**`, and boots it with
+every pull request touching `fedora/**`, and boots it with
 incus-spawn's `appliance/test-vm-kernel.sh` (x86_64 under KVM, aarch64 under
-TCG) until it reaches `basic.target`. Its tarballs are artifacts only, never
-released.
+TCG) until it reaches `basic.target`. `build-fedora.yml` calls it as a reusable
+workflow, so a release ships its tarballs as `-vm-direct.tar.xz` only when that
+boot test passed; a failed one fails the whole release.
 
 [`.github/workflows/test.yml`](.github/workflows/test.yml) (`Test`) runs on
 every pull request and push to `main`. It runs `tests/test-network-watchdog.sh`,
@@ -337,25 +347,15 @@ To publish a new base image release:
    ```
 
 2. **Wait for CI** — the workflow builds both `x86_64` and `aarch64` images and
-   creates a GitHub release with the tarballs and `SHA256SUMS`.
+   creates a GitHub release with the tarballs, `SHA256SUMS` and `SHA256SUMS.v2`.
 
-3. **Update `incus-spawn`** — edit
-   `src/main/resources/images/minimal.yaml` in the `incus-spawn` repo:
-
-   ```yaml
-   image_tag: fedora-44-YYYYMMDD          # the new release tag
-   image_sha256:
-     x86_64: <sha256-from-SHA256SUMS>
-     aarch64: <sha256-from-SHA256SUMS>
-   vm_image_sha256:
-     x86_64: <sha256-from-SHA256SUMS>
-     aarch64: <sha256-from-SHA256SUMS>
-   ```
-
-   Get the checksums from the release's `SHA256SUMS` file:
+3. **Update `incus-spawn`** — the release notifies `incus-spawn`, whose
+   `update-base-image.yml` opens a PR bumping `common/src/main/resources/images/minimal.yaml`
+   (tag and checksums; the VM image's are `-vm-direct`'s from `SHA256SUMS.v2`).
+   Check every checksum in it against the release before merging:
 
    ```bash
-   curl -sL https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/SHA256SUMS
+   gh release download <tag> -R Sanne/incus-spawn-images -p SHA256SUMS.v2 -O -
    ```
 
 4. **Rebuild and test `isx`** — `mvn package && ./install.sh`, then
