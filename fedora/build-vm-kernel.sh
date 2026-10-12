@@ -21,7 +21,7 @@ set -euo pipefail
 # then the tag of that release. A change to the fragments reaches this image only
 # through a bump here.
 ISX_REPO=https://github.com/Sanne/incus-spawn.git
-ISX_REF=258fc9cd5bfeb2acbe02c72607c3ab75b9e3580b
+ISX_REF=4378c2f8c54561e9104846a4f088731da163c2c6
 
 OUTPUT="${1:?Usage: $0 <output-dir> [arch]}"
 ARCH="${2:-$(uname -m)}"
