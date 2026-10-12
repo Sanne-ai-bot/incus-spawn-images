@@ -120,6 +120,11 @@ bash "${SCRIPT_DIR}/kernel-cmdline.sh" "${MOUNTPOINT}/etc/kernel/cmdline" "${ROO
 # (Sanne/incus-spawn#1217). Also before any chroot step.
 install -D -m 0755 -t "${MOUNTPOINT}/etc/kernel/install.d" "${SCRIPT_DIR}"/kernel-install/*.install
 
+# Every later kernel's entry gets the id of the image's own, whatever an instance's
+# machine-id, so the newest kernel is the one GRUB boots (Sanne/incus-spawn#1217).
+# Also before any chroot step.
+bash "${SCRIPT_DIR}/kernel-install-id.sh" "${MOUNTPOINT}"
+
 # --- Install packages via chroot ---
 echo "Installing packages..."
 
@@ -186,6 +191,18 @@ for entry in "${ENTRIES[@]}"; do
   read -r -a GOT_OPTIONS <<< "$(sed -n 's/^options[[:space:]]*//p' "${entry}" | tr '\n' ' ')"
   if [ "${GOT_OPTIONS[*]}" != "${WANT_OPTIONS[*]}" ]; then
     echo "Error: ${entry#"${MOUNTPOINT}"} boots with '${GOT_OPTIONS[*]}', not /etc/kernel/cmdline's '${WANT_OPTIONS[*]}'"
+    exit 1
+  fi
+done
+# The last assignment wins, as when kernel-install reads the file; quotes are not part of the value.
+ENTRY_ID=$(sed -n 's/^KERNEL_INSTALL_MACHINE_ID=//p' "${MOUNTPOINT}/etc/machine-info" 2>/dev/null | tail -n 1 | tr -d "\"'" || true)
+if [ -z "${ENTRY_ID}" ]; then
+  echo "Error: /etc/machine-info in the image sets no KERNEL_INSTALL_MACHINE_ID"
+  exit 1
+fi
+for entry in "${ENTRIES[@]}"; do
+  if [[ "${entry##*/}" != "${ENTRY_ID}"-* ]]; then
+    echo "Error: ${entry#"${MOUNTPOINT}"} is not named by KERNEL_INSTALL_MACHINE_ID ${ENTRY_ID}"
     exit 1
   fi
 done

@@ -29,3 +29,6 @@ jobs:
 
       - name: VM stale boot entries
         run: tests/test-stale-boot-entries.sh
+
+      - name: VM kernel entries under the image's id
+        run: tests/test-kernel-install-id.sh
