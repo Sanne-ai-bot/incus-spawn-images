@@ -29,6 +29,13 @@ dnf --use-host-config --installroot="${ROOTFS}" clean all
 rm -rf "${ROOTFS}/var/cache/libdnf5" "${ROOTFS}/tmp"/* "${ROOTFS}/var/tmp"/*
 rm -rf "${ROOTFS}/var/log"/*
 
+# The bootstrap's systemd scriptlets wrote a machine-id, which every container
+# made from the image would share (Sanne/incus-spawn#1305). Empty, so systemd
+# generates one at each instance's first start. Not "uninitialized": in a
+# container's writable root that boot is a first boot, whose full preset-all
+# disables systemd-networkd, its sockets and the network watchdog timer.
+: > "${ROOTFS}/etc/machine-id"
+
 # Create Incus metadata.yaml
 echo "Creating metadata..."
 CREATION_DATE=$(date +%s)
@@ -47,6 +54,8 @@ echo "Preparing rootfs layout..."
 mkdir -p /tmp/image-root/rootfs
 cp /tmp/metadata.yaml /tmp/image-root/
 cp -a "${ROOTFS}/." /tmp/image-root/rootfs/
+[ -f /tmp/image-root/rootfs/etc/machine-id ] && [ ! -s /tmp/image-root/rootfs/etc/machine-id ] \
+  || { echo "Error: the image's /etc/machine-id is not an empty file" >&2; exit 1; }
 
 # Package as unified tarball (metadata.yaml + rootfs/ tree)
 echo "Packaging image..."
