@@ -14,6 +14,7 @@ on:
     branches: [main]
     paths:
       - 'fedora/**'
+      - 'tests/test-container-boot.sh'
       - '.github/workflows/build-fedora.yml'
       - '.github/workflows/build-vm-scratch.yml'
 
@@ -42,6 +43,9 @@ jobs:
             -e OUTPUT_DIR=/output \
             fedora:${{ env.RELEASE }} \
             bash /build/fedora/build.sh
+
+      - name: Boot the container image
+        run: tests/test-container-boot.sh output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}.tar.xz
 
       - name: Install VM build tools
         run: |

@@ -23,6 +23,26 @@ bash "${SCRIPT_DIR}/bootstrap-rootfs.sh" "${RELEASE}" "${ROOTFS}"
 echo ""
 echo "=== Packaging container image ==="
 
+# Units a container has no use for, which would otherwise fail at every boot and
+# leave it `degraded` (#30). The VM build does not run this script.
+#
+# console-getty: nobody can log in on a container's console (root and agentuser have
+# no password; isx enters with `incus exec`), and under Incus its agetty cannot even
+# open it ("Failed to set up standard input: No such file or directory").
+chroot "${ROOTFS}" systemctl mask console-getty.service
+# systemd-logind exits when there is no system bus, and the image ships none, nor the
+# pam_systemd that would register sessions with it. Templates that want logind (the
+# podman tool, for lingering) install dbus-broker and systemd-pam, so it is not
+# masked: it is skipped, not failed, until a bus is installed.
+for unit in systemd-logind.service systemd-logind-varlink.socket; do
+  mkdir -p "${ROOTFS}/etc/systemd/system/${unit}.d"
+  cat > "${ROOTFS}/etc/systemd/system/${unit}.d/isx-needs-bus.conf" << 'EOF'
+# incus-spawn: logind cannot start without a system bus, which the base image lacks.
+[Unit]
+ConditionPathExists=/usr/lib/systemd/system/dbus.socket
+EOF
+done
+
 # Clean all caches to minimize image size
 echo "Cleaning caches..."
 dnf --use-host-config --installroot="${ROOTFS}" clean all
