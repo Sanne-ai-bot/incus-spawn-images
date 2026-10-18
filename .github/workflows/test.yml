@@ -32,3 +32,6 @@ jobs:
 
       - name: VM kernel entries under the image's id
         run: tests/test-kernel-install-id.sh
+
+      - name: Release tag
+        run: tests/test-release-tag.sh
