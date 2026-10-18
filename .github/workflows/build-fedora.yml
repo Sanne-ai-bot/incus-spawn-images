@@ -17,6 +17,13 @@ on:
       - 'tests/test-container-boot.sh'
       - '.github/workflows/build-fedora.yml'
       - '.github/workflows/build-vm-scratch.yml'
+  # Pull requests build only the container image and boot it: the from-scratch VM
+  # image has its own pull_request run (build-vm-scratch.yml), and nothing is released.
+  pull_request:
+    paths:
+      - 'fedora/**'
+      - 'tests/test-container-boot.sh'
+      - '.github/workflows/build-fedora.yml'
 
 env:
   RELEASE: '44'
@@ -48,15 +55,18 @@ jobs:
         run: tests/test-container-boot.sh output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}.tar.xz
 
       - name: Install VM build tools
+        if: github.event_name != 'pull_request'
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-utils jq curl cloud-guest-utils e2fsprogs
 
       - name: Build VM image
+        if: github.event_name != 'pull_request'
         run: |
           sudo fedora/build-vm.sh output
 
       - name: Upload container artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: fedora-${{ env.RELEASE }}-${{ matrix.arch }}
@@ -65,6 +75,7 @@ jobs:
             output/fedora-${{ env.RELEASE }}-${{ matrix.arch }}.tar.xz.sha256
 
       - name: Upload VM artifact
+        if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@v7
         with:
           name: fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm
@@ -75,6 +86,7 @@ jobs:
   # The VM image built from scratch, with its boot test as the gate: released as
   # -vm-direct.tar.xz beside the stock-based -vm.tar.xz above, never in place of it.
   build-vm-direct:
+    if: github.event_name != 'pull_request'
     uses: ./.github/workflows/build-vm-scratch.yml
 
   release:
