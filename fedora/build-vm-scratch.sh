@@ -85,9 +85,14 @@ bash "${SCRIPT_DIR}/bootstrap-rootfs.sh" "${RELEASE}" "${ROOTFS}" "${VM_PACKAGES
 echo "Adding the VM's own files..."
 cp -R --no-preserve=ownership "${SCRIPT_DIR}/vm-root/." "${ROOTFS}/"
 # The bootstrap's systemd scriptlets wrote a machine-id, which every VM made
-# from the image would share. "uninitialized", as in the stock Incus image, has
-# systemd generate one on each instance's first boot.
-echo uninitialized > "${ROOTFS}/etc/machine-id"
+# from the image would share. An empty file, never committed, makes systemd take
+# each boot's ID from the VM's SMBIOS UUID (the kernel has DMI for it), which
+# Incus makes anew for every copy and keeps across restarts: so a copy of a VM
+# that has booted gets its own too (Sanne/incus-spawn#1483). Not
+# "uninitialized": that makes a boot a first boot, and Fedora's full preset-all
+# then disables systemd-networkd and the network watchdog (#1305).
+: > "${ROOTFS}/etc/machine-id"
+ln -sf /dev/null "${ROOTFS}/etc/systemd/system/systemd-machine-id-commit.service"
 
 echo "Indexing the kernel's built-in drivers (${KERNEL_RELEASE})..."
 MODDIR="${ROOTFS}/usr/lib/modules/${KERNEL_RELEASE}"
@@ -125,7 +130,9 @@ grep -qx 'SELINUX=disabled' "${ROOTFS}/etc/selinux/config" \
 for f in usr/lib/systemd/system/incus-agent.service usr/lib/udev/rules.d/99-incus-agent.rules; do
   [ -f "${ROOTFS}/${f}" ] || fail "the image lacks /${f}"
 done
-grep -qx uninitialized "${ROOTFS}/etc/machine-id" || fail "the image has a fixed /etc/machine-id"
+[ -f "${ROOTFS}/etc/machine-id" ] && [ ! -s "${ROOTFS}/etc/machine-id" ] || fail "the image's /etc/machine-id is not an empty file"
+[ "$(readlink "${ROOTFS}/etc/systemd/system/systemd-machine-id-commit.service")" = /dev/null ] \
+  || fail "the image does not mask systemd-machine-id-commit, so a VM's first ID would stick to its copies"
 [ -x "${ROOTFS}/usr/lib/systemd/incus-agent-setup" ] || fail "the image lacks an executable /usr/lib/systemd/incus-agent-setup"
 # dnf in the guest reads the drop-in, as the --installroot dnf below does: it
 # refuses the kernel and still resolves what only looks like one.

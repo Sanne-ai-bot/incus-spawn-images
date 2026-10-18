@@ -189,8 +189,10 @@ configured by the same `configure-base.sh`, then overlaid with
 [`fedora/vm-root/`](fedora/vm-root): the incus-agent's unit, udev rule and setup
 script as the stock Incus images have them, DHCP on the first NIC, the fstab
 and the dnf drop-in below. No kernel packages, dracut, GRUB, shim, `/boot` or
-module files, and `/etc/machine-id` says `uninitialized`, so each instance
-gets its own; the build fails otherwise. `/usr/lib/modules/<release>/` holds
+module files, and `/etc/machine-id` is empty with
+`systemd-machine-id-commit` masked, so each VM takes its ID from its SMBIOS
+UUID at every boot, which Incus makes anew for every copy
+(Sanne/incus-spawn#1483); the build fails otherwise. `/usr/lib/modules/<release>/` holds
 only the kernel's index of its built-in drivers (`modules.builtin`, from
 `build-kernel.sh vm`) and what `depmod` makes of it, so `modprobe` of a
 built-in driver succeeds: Incus runs VMs only once `modprobe vhost_vsock`
