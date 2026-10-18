@@ -74,6 +74,12 @@ harmful in a container are masked — `systemd-homed` (+ firstboot), the
 package metadata in the background through the isx proxy in boxes that may
 never run dnf.
 
+The container image also masks `console-getty` (nobody can log in on a
+container's console) and skips `systemd-logind` until a template installs a
+system bus, as incus-spawn's `podman` tool does; `fedora/build.sh` says why.
+`tests/test-container-boot.sh` boots the image under podman and checks it
+reaches `running`, with and without a bus; the container build job runs it.
+
 **SELinux is pinned off in practice.** These images ship without an SELinux
 policy, so nothing is labelled. `configure-base.sh` writes `/etc/selinux/config`
 with `SELINUX=disabled` so a policy arriving later as a transitive dependency —
@@ -315,7 +321,8 @@ isx build tpl-dev             # rebuild derived templates
 ./revert-local.sh            # reverts isx to the built-in base image
 ```
 
-`test-local.sh` runs the podman build, then writes a `tpl-minimal` override
+`test-local.sh` runs the podman build and boots the container image with
+`tests/test-container-boot.sh`, then writes a `tpl-minimal` override
 pointing at the local tarballs via `file://` URLs. Each run generates a unique
 tag so `isx` re-imports automatically. `revert-local.sh` deletes the override.
 

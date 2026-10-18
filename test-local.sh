@@ -27,6 +27,10 @@ if [ ! -f "${TARBALL}" ]; then
 fi
 
 echo ""
+echo "=== Booting the container image ==="
+"${SCRIPT_DIR}/tests/test-container-boot.sh" "${TARBALL}"
+
+echo ""
 echo "=== Building VM image ==="
 "${SCRIPT_DIR}/fedora/build-vm.sh" "${OUTPUT_DIR}"
 
