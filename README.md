@@ -290,6 +290,16 @@ Triggers:
 - **Manual dispatch** — optionally pass a `version` tag (e.g. `fedora-44-v2`)
   and publishes a release.
 
+A release never replaces the assets of a tag that already exists: incus-spawn
+pins their checksums. A later release on the same day, or a re-run, is tagged
+`fedora-44-<YYYYMMDD>-2`, `-3` and so on, and a requested `version` that exists
+fails the release ([`release-tag.sh`](.github/scripts/release-tag.sh)).
+A run that fails after creating its tag, in "Create release", leaves the tag
+behind, and possibly a draft release (assets are uploaded before it is
+published): delete both by hand before running that `version` again, or it
+fails as already existing. Never delete a published release, which isx may
+already have pinned: release under a new `version` instead.
+
 Releases attach the container, VM and legacy VM tarballs for both architectures,
 plus `SHA256SUMS` (container and legacy VM only) and `SHA256SUMS.v2` (all six).
 The release job checks every line of `SHA256SUMS.v2` against the file published
@@ -363,7 +373,7 @@ To publish a new base image release:
    Base Image → Run workflow) or the CLI:
 
    ```bash
-   # Auto-generated date tag (fedora-44-YYYYMMDD):
+   # Auto-generated date tag (fedora-44-YYYYMMDD, then -2, -3 on the same day):
    gh workflow run build-fedora.yml
 
    # Explicit tag:
