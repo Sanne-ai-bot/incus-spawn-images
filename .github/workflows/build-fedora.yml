@@ -31,6 +31,8 @@ env:
 jobs:
   build:
     strategy:
+      # Each architecture's boot test reports on its own.
+      fail-fast: false
       matrix:
         include:
           - arch: x86_64
