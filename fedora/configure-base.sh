@@ -32,6 +32,7 @@ systemctl mask \
     systemd-boot-clear-sysfail.service \
     systemd-sysupdate.timer \
     systemd-sysupdate-reboot.timer \
+    systemd-sysupdate-update.timer \
     unbound-anchor.timer \
     fstrim.timer \
     selinux-autorelabel-mark.service \
