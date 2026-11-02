@@ -57,6 +57,9 @@ mkdir -p "${CONFIG_DIR}"
 cat > "${OVERRIDE_FILE}" << EOF
 name: tpl-minimal
 description: Base OS only (local build)
+# What the built-in tpl-minimal masks, which this file replaces whole: Fedora's
+# /tmp is a tmpfs, emptied by every restart, and isx keeps it on disk (Sanne/incus-spawn#1561)
+mask_services: [tmp.mount]
 image: fedora-${RELEASE}-base
 image_url: file://${TARBALL}
 image_tag: ${TAG}
