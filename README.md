@@ -11,16 +11,17 @@ reproducible.
 Each release carries two images, for both architectures:
 - **Container image** (`.tar.xz`): rootfs tarball for Incus containers
 - **VM image** (`-vm-direct.tar.xz`): the [VM image built from scratch](#the-vm-image-built-from-scratch)
-  around a kernel of our own, listed only in `SHA256SUMS.v2`
+  around a kernel of our own
 
-`SHA256SUMS` lists the container images and nothing else: isx releases before
-the `SHA256SUMS.v2` reader
-([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255)) take
-any name containing `-vm` in it for the VM image. `SHA256SUMS.v2` lists all four,
-in the same format. Releases up to Fedora 44 also carried a legacy VM image
-(`-vm.tar.xz`), built from the stock Incus Fedora image for those isx releases;
-none of them downloads a Fedora 45 asset, so it was dropped with the move
-([Sanne/incus-spawn#1862](https://github.com/Sanne/incus-spawn/issues/1862)).
+`SHA256SUMS.v2` lists all four, one `<sha256>  <file>` per line, and is the
+release's only manifest. Releases up to Fedora 44 also carried `SHA256SUMS` and a
+legacy VM image (`-vm.tar.xz`, built from the stock Incus Fedora image) for isx
+releases before the `SHA256SUMS.v2` reader
+([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255)).
+Both were dropped with the move to Fedora 45
+([Sanne/incus-spawn#1862](https://github.com/Sanne/incus-spawn/issues/1862)):
+isx up to v0.3.11 reads `SHA256SUMS` by arch alone, and would take a Fedora 45
+release's checksums for its own Fedora 44 downloads.
 
 Release tags and asset names carry the Fedora release (`fedora-45-<date>`,
 `fedora-45-<arch>.tar.xz`). An isx release downloads the asset names its built-in
@@ -232,10 +233,9 @@ fails as already existing. Never delete a published release, which isx may
 already have pinned: release under a new `version` instead.
 
 Releases attach the container and VM tarballs for both architectures, plus
-`SHA256SUMS` (container only) and `SHA256SUMS.v2` (all four).
-The release job checks every line of `SHA256SUMS.v2` against the file published
-under its name (`sha256sum -c`), and that `SHA256SUMS` names no `-vm-direct`
-asset, before it publishes anything.
+`SHA256SUMS.v2` (all four). The release job checks every line of it against the
+file published under its name (`sha256sum -c`), and that there is no
+`SHA256SUMS`, before it publishes anything.
 
 [`.github/workflows/build-vm-scratch.yml`](.github/workflows/build-vm-scratch.yml)
 builds the VM image from scratch with its kernel, for both architectures, on
@@ -318,7 +318,7 @@ To publish a new base image release:
    ```
 
 2. **Wait for CI** — the workflow builds both `x86_64` and `aarch64` images and
-   creates a GitHub release with the tarballs, `SHA256SUMS` and `SHA256SUMS.v2`.
+   creates a GitHub release with the tarballs and `SHA256SUMS.v2`.
 
 3. **Update `incus-spawn`** — the release notifies `incus-spawn`, whose
    `update-base-image.yml` opens a PR bumping `common/src/main/resources/images/minimal.yaml`

@@ -89,28 +89,25 @@ jobs:
           cp artifacts/fedora-${{ env.RELEASE }}-x86_64/* release/
           cp artifacts/fedora-${{ env.RELEASE }}-aarch64/* release/
 
-          # Create combined SHA256SUMS
+          # SHA256SUMS.v2 is the release's only manifest (Sanne/incus-spawn#1862):
+          # isx up to v0.3.11 reads SHA256SUMS by arch alone and would take these
+          # checksums for its own fedora-44 downloads; with no SHA256SUMS it keeps
+          # its built-in release. Later isx reads SHA256SUMS.v2 first.
           cd release
           for f in *.sha256; do
-            basename="${f%.sha256}"
-            echo "$(cat "$f")  ${basename}" >> SHA256SUMS
+            echo "$(cat "$f")  ${f%.sha256}" >> SHA256SUMS.v2
           done
-          cat SHA256SUMS
-
-          # SHA256SUMS lists the two container images; SHA256SUMS.v2 adds the
-          # VM images built from scratch, as it has since Sanne/incus-spawn#1255.
-          cp SHA256SUMS SHA256SUMS.v2
           for arch in x86_64 aarch64; do
             src="../artifacts/fedora-${{ env.RELEASE }}-${arch}-vm-scratch/fedora-${{ env.RELEASE }}-${arch}-vm-scratch.tar.xz"
             cp "$src" "fedora-${{ env.RELEASE }}-${arch}-vm-direct.tar.xz"
             echo "$(cat "$src.sha256")  fedora-${{ env.RELEASE }}-${arch}-vm-direct.tar.xz" >> SHA256SUMS.v2
           done
+          rm -f *.sha256
           cat SHA256SUMS.v2
           # Every listed checksum is that of the file published under its name.
           sha256sum --strict -c SHA256SUMS.v2
-          [ "$(wc -l < SHA256SUMS)" = 2 ] && [ "$(wc -l < SHA256SUMS.v2)" = 4 ] \
-            || { echo "SHA256SUMS must list 2 assets and SHA256SUMS.v2 4"; exit 1; }
-          if grep -q -- '-vm-direct' SHA256SUMS; then echo "SHA256SUMS lists -vm-direct"; exit 1; fi
+          [ "$(wc -l < SHA256SUMS.v2)" = 4 ] || { echo "SHA256SUMS.v2 must list 4 assets"; exit 1; }
+          [ ! -e SHA256SUMS ] || { echo "a release must not carry SHA256SUMS"; exit 1; }
 
       - uses: actions/checkout@v7
         with:
@@ -151,9 +148,9 @@ jobs:
             Pre-baked with: agentuser, base packages, systemd service masks, resolved disabled.
 
             **Container image** (`.tar.xz`): rootfs tarball for Incus containers.
-            **VM image** (`-vm-direct.tar.xz`): disk image for Incus VMs, built from scratch around incus-spawn's own kernel, which the firmware starts directly: no boot loader, no initrd, no modules. It needs the root disk on virtio-blk and Secure Boot off, both of which isx sets from the release that reads `SHA256SUMS.v2` on. Listed only in `SHA256SUMS.v2`.
+            **VM image** (`-vm-direct.tar.xz`): disk image for Incus VMs, built from scratch around incus-spawn's own kernel, which the firmware starts directly: no boot loader, no initrd, no modules. It needs the root disk on virtio-blk and Secure Boot off, both of which isx sets from the release that reads `SHA256SUMS.v2` on.
 
-            **Checksums:** `SHA256SUMS` lists the container images; `SHA256SUMS.v2` lists all four assets.
+            **Checksums:** `SHA256SUMS.v2` lists all four assets. There is no `SHA256SUMS`: isx releases that read only that file stay on their built-in Fedora 44 release.
 
             **Usage:** isx tracks the newest release by itself; the automated bump in `incus-spawn` updates the built-in fallback in `minimal.yaml`.
           files: |
@@ -161,7 +158,6 @@ jobs:
             release/fedora-${{ env.RELEASE }}-aarch64.tar.xz
             release/fedora-${{ env.RELEASE }}-x86_64-vm-direct.tar.xz
             release/fedora-${{ env.RELEASE }}-aarch64-vm-direct.tar.xz
-            release/SHA256SUMS
             release/SHA256SUMS.v2
 
       # Push model: tell incus-spawn a new base image is available, carrying the tag
