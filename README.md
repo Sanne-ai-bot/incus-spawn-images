@@ -8,18 +8,19 @@ no longer depend on the linuxcontainers.org image server and skip the repeated
 per-build provisioning, so spinning up a fresh container is faster and more
 reproducible.
 
-Each release carries three images, for both architectures:
+Each release carries two images, for both architectures:
 - **Container image** (`.tar.xz`): rootfs tarball for Incus containers
 - **VM image** (`-vm-direct.tar.xz`): the [VM image built from scratch](#the-vm-image-built-from-scratch)
   around a kernel of our own, listed only in `SHA256SUMS.v2`
-- **Legacy VM image** (`-vm.tar.xz`): bootable disk image for Incus VMs, based on
-  the stock Incus Fedora image, for isx releases that read only `SHA256SUMS`
 
-`SHA256SUMS` lists the container and legacy VM images and nothing else, exactly as
-before `-vm-direct` existed: isx releases before the `SHA256SUMS.v2` reader
+`SHA256SUMS` lists the container images and nothing else: isx releases before
+the `SHA256SUMS.v2` reader
 ([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255)) take
-any name containing `-vm` in it for the VM image, so one more line would overwrite
-a checksum they use. `SHA256SUMS.v2` lists all six, in the same format.
+any name containing `-vm` in it for the VM image. `SHA256SUMS.v2` lists all four,
+in the same format. Releases up to Fedora 44 also carried a legacy VM image
+(`-vm.tar.xz`), built from the stock Incus Fedora image for those isx releases;
+none of them downloads a Fedora 45 asset, so it was dropped with the move
+([Sanne/incus-spawn#1862](https://github.com/Sanne/incus-spawn/issues/1862)).
 
 Release tags and asset names carry the Fedora release (`fedora-45-<date>`,
 `fedora-45-<arch>.tar.xz`). An isx release downloads the asset names its built-in
@@ -101,78 +102,6 @@ the unsafe way to disable it (see its config template and
 under a `rootfs/` subdirectory, compressed as `.tar.xz`, with a companion
 `.sha256`.
 
-**VM packaging.** The VM image starts from the stock Incus Fedora VM image
-(which already has the kernel, bootloader, and `incus-agent` set up). The
-qcow2 disk is converted to raw, mounted via `losetup`, and customized in a
-chroot with the same packages and configuration as the container image (see
-[`fedora/build-vm.sh`](fedora/build-vm.sh)). The modified disk is converted
-back to a compressed qcow2 and packaged as an Incus unified tarball
-(`metadata.yaml` + `rootfs.img`).
-
-**The VM kernel command line names the root by UUID.** The stock image ships
-`/etc/kernel/cmdline` with the loop device it was built on
-(`root=/dev/loop0p2`). Its own kernel boots anyway, because its boot entry
-uses `$kernelopts`, but `kernel-install` writes the entry for every kernel
-installed later from that file, so a guest whose `dnf upgrade` brought a new
-kernel waited forever for the loop device on its next boot.
-[`fedora/kernel-cmdline.sh`](fedora/kernel-cmdline.sh) rewrites the root to
-`root=UUID=<root filesystem>` before any package is installed, keeping the
-other options, and the build fails if a later step undid it or left a loop
-device anywhere in the image's boot configuration. See
-[Sanne/incus-spawn#1217](https://github.com/Sanne/incus-spawn/issues/1217).
-
-**The VM kernel boots with `loglevel=5`, and `/etc/kernel/cmdline` decides it
-for every kernel.** The stock image writes the kernel's informational messages
-to `console=tty1 console=ttyS0`, about 125 KB per boot through an emulated
-serial port and framebuffer before userspace starts. `kernel-cmdline.sh` adds
-`loglevel=5` unless the line sets a level already. The console then shows only
-messages more severe than notices: warnings (`WARN_ON` backtraces included),
-errors and panics, about 300 bytes on a normal boot. systemd's per-unit status
-lines are not kernel messages and still print, the ones isx quotes when an
-`incus-agent` fails to start included. `quiet` would also drop the kernel's
-warnings (it caps the console at `loglevel=4`) and turn systemd's status lines
-off until a unit fails or stalls. SELinux avc denials are notices and no longer
-reach the console; the image pins SELinux off. The stock kernel's boot entry
-reads `$kernelopts`, filled in from a fallback in the EFI partition's
-`grub.cfg`, so [`fedora/boot-entries.sh`](fedora/boot-entries.sh) writes the
-contents of `/etc/kernel/cmdline` into it, and every other entry, after the
-package installs, as `kernel-install` does for every later kernel. The build
-fails unless every boot
-entry boots with exactly what that file says, and it names the root by UUID and
-sets a log level. See
-[Sanne/incus-spawn#1238](https://github.com/Sanne/incus-spawn/issues/1238).
-
-**Removing a kernel removes its boot entry in every instance.** Fedora's
-`20-grub.install` names a kernel's boot entry `<machine-id>-<version>.conf` and,
-when the kernel goes, removes only the entry under the running machine's id. The
-image's own kernel has the entry of the machine that built the image, and every
-instance has a machine-id of its own, so a template whose `dnf upgrade`s pushed
-that kernel past `installonly_limit` kept an entry for a `vmlinuz` that no longer
-exists. GRUB boots whichever entry sorts first, so whether the guest then failed
-with ``file `/boot/vmlinuz-...' not found`` was down to its machine-id. The build
-installs the kernel-install plugin
-[`fedora/kernel-install/21-isx-stale-entries.install`](fedora/kernel-install/21-isx-stale-entries.install)
-in `/etc/kernel/install.d`; it removes every entry for the version being
-removed, whatever machine-id named it.
-[`tests/test-stale-boot-entries.sh`](tests/test-stale-boot-entries.sh) runs
-Fedora's own `kernel-install` against it in a container. See
-[Sanne/incus-spawn#1217](https://github.com/Sanne/incus-spawn/issues/1217).
-
-**A kernel a template installs is the one that boots.** GRUB's `blscfg` orders
-entries by that same machine-id before their version, and boots the first. A
-kernel a template's build installed was filed under the build instance's id, so
-whether its branches booted it or the image's older kernel was down to two
-random ids. The build runs
-[`fedora/kernel-install-id.sh`](fedora/kernel-install-id.sh), which writes
-`KERNEL_INSTALL_MACHINE_ID=<the image's entry id>` into `/etc/machine-info`.
-`kernel-install`, and Fedora's `20-grub.install` with it, then names every later
-entry by that id, in every instance, so the newest version sorts first; each
-instance keeps its own machine-id.
-[`tests/test-kernel-install-id.sh`](tests/test-kernel-install-id.sh) checks it
-with Fedora's `kernel-install` in a container. The VM image built from scratch
-has no boot entries: its kernel is the ESP's only file, and dnf in it refuses
-kernel packages, so a template cannot change its kernel at all.
-
 ## The VM image built from scratch
 
 [`fedora/build-vm-scratch.sh`](fedora/build-vm-scratch.sh) builds the VM image
@@ -180,7 +109,9 @@ without the stock Incus image, around a kernel of our own
 ([Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255),
 [#12](https://github.com/Sanne/incus-spawn-images/issues/12)). It boots with no
 boot loader, no initrd and no modules: on one host, 2.4 s to `basic.target`
-against 6.0 s for the image built from the stock one.
+against 6.0 s for the legacy image built from the stock one. It has no boot
+entries: its kernel is the ESP's only file, and dnf in it refuses kernel
+packages, so a template cannot change its kernel at all.
 
 **Disk.** A GPT with two partitions, written without loop devices or mounts
 (`sgdisk`, mtools, `mkfs.ext4 -d`), so the build runs in a container:
@@ -268,24 +199,18 @@ mkdir -p output && podman run --rm --privileged \
   fedora:45 bash /build/fedora/build.sh
 ```
 
-**VM image** — runs directly on the host (needs root for `losetup` + `mount`):
-
-```bash
-sudo fedora/build-vm.sh output
-```
-
-Requires `qemu-img`, `jq`, `curl`, `growpart`, and `e2fsprogs`/`xfsprogs`.
+**VM image**: see [the VM image built from scratch](#the-vm-image-built-from-scratch).
 
 Output files:
 - `output/fedora-45-<arch>.tar.xz` — container image (+ `.sha256`)
-- `output/fedora-45-<arch>-vm.tar.xz` — VM image (+ `.sha256`)
+- `output/fedora-45-<arch>-vm-scratch.tar.xz` — VM image (+ `.sha256`), released as `-vm-direct.tar.xz`
 
 ## CI
 
 [`.github/workflows/build-fedora.yml`](.github/workflows/build-fedora.yml)
 builds both `x86_64` (on a regular instance) and `aarch64` (on an arm instance).
-The container image is built in podman; the VM image is built directly on the
-runner via `losetup` + chroot.
+The container image is built in podman; the VM image is built by
+`build-vm-scratch.yml`, below.
 
 Triggers:
 
@@ -306,8 +231,8 @@ published): delete both by hand before running that `version` again, or it
 fails as already existing. Never delete a published release, which isx may
 already have pinned: release under a new `version` instead.
 
-Releases attach the container, VM and legacy VM tarballs for both architectures,
-plus `SHA256SUMS` (container and legacy VM only) and `SHA256SUMS.v2` (all six).
+Releases attach the container and VM tarballs for both architectures, plus
+`SHA256SUMS` (container only) and `SHA256SUMS.v2` (all four).
 The release job checks every line of `SHA256SUMS.v2` against the file published
 under its name (`sha256sum -c`), and that `SHA256SUMS` names no `-vm-direct`
 asset, before it publishes anything.
@@ -323,7 +248,8 @@ boot test passed; a failed one fails the whole release.
 [`.github/workflows/test.yml`](.github/workflows/test.yml) (`Test`) runs on
 every pull request and push to `main`. It runs `tests/test-network-watchdog.sh`,
 which checks the network watchdog against stubbed tools and against the
-runner's real `ip`. It needs no root and builds no image.
+runner's real `ip`, and `tests/test-release-tag.sh`. It needs no root and builds
+no image.
 
 ## Testing locally with incus-spawn
 
@@ -338,7 +264,8 @@ isx build tpl-dev             # rebuild derived templates
 ```
 
 `test-local.sh` runs the podman build and boots the container image with
-`tests/test-container-boot.sh`, then writes a `tpl-minimal` override
+`tests/test-container-boot.sh`, builds the VM image from scratch (its kernel
+first, which takes a while), then writes a `tpl-minimal` override
 pointing at the local tarballs via `file://` URLs. Each run generates a unique
 tag so `isx` re-imports automatically. `revert-local.sh` deletes the override.
 
@@ -354,9 +281,13 @@ name: tpl-test-base
 description: Local base image test
 image: fedora-45-test
 image_url: file:///path/to/incus-spawn-images/output/fedora-45-{arch}.tar.xz
-vm_image_url: file:///path/to/incus-spawn-images/output/fedora-45-{arch}-vm.tar.xz
+vm_image_url: file:///path/to/incus-spawn-images/output/fedora-45-{arch}-vm-direct.tar.xz
 image_tag: local-test
 ```
+
+The VM file is the `-vm-scratch.tar.xz` build output under its release name,
+`-vm-direct.tar.xz`, which isx keys the VM image's alias on (`test-local.sh`
+renames it).
 
 No `image_sha256` / `vm_image_sha256` — omitting them skips the hash check,
 which is what you want during iterative testing. Bump `image_tag` each time you
@@ -444,7 +375,7 @@ To reference a specific release directly in a template definition:
 ```yaml
 image: fedora-45-base
 image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-45-{arch}.tar.xz
-vm_image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-45-{arch}-vm.tar.xz
+vm_image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-45-{arch}-vm-direct.tar.xz
 image_sha256:
   x86_64: <sha256>
   aarch64: <sha256>

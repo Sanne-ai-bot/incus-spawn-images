@@ -21,17 +21,5 @@ jobs:
           # the checks against the real `ip`.
           REQUIRE_REAL_IP: 1
 
-      - name: VM kernel command line
-        run: tests/test-kernel-cmdline.sh
-
-      - name: VM boot entries
-        run: tests/test-boot-entries.sh
-
-      - name: VM stale boot entries
-        run: tests/test-stale-boot-entries.sh
-
-      - name: VM kernel entries under the image's id
-        run: tests/test-kernel-install-id.sh
-
       - name: Release tag
         run: tests/test-release-tag.sh

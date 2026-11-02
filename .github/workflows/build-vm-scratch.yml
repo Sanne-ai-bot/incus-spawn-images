@@ -6,9 +6,8 @@ name: Build VM Image From Scratch
 # runners expose no /dev/kvm, so aarch64 boots under TCG.
 #
 # Released by build-fedora.yml, which calls this workflow, as
-# fedora-45-<arch>-vm-direct.tar.xz, listed only in SHA256SUMS.v2: SHA256SUMS
-# and -vm.tar.xz stay build-vm.sh's, what isx releases before the v2 reader
-# parse (Sanne/incus-spawn#1255). A push to main runs it through
+# fedora-45-<arch>-vm-direct.tar.xz, listed only in SHA256SUMS.v2, the file isx
+# reads from Sanne/incus-spawn#1255 on. A push to main runs it through
 # build-fedora.yml; on its own it runs for pull requests and by hand.
 
 on:
