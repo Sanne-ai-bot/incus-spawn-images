@@ -4,7 +4,7 @@
 # templates that need logind do (incus-spawn's podman tool installs dbus-broker and
 # systemd-pam), and checks that logind starts once there is one.
 #
-# Usage: test-container-boot.sh <fedora-44-<arch>.tar.xz>
+# Usage: test-container-boot.sh <fedora-45-<arch>.tar.xz>
 # Needs podman (rootful or rootless) and network for the dnf step.
 #
 # podman is not Incus: its containers get no console unless given a tty, so it

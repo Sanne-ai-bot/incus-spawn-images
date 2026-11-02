@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ARCH=$(uname -m)
-RELEASE=44
+RELEASE=45
 ROOTFS=/tmp/rootfs
 OUTPUT=${OUTPUT_DIR:-/output}
 

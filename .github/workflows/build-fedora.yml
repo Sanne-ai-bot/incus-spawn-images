@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release tag (e.g. fedora-44-v2)'
+        description: 'Release tag (e.g. fedora-45-v1)'
         required: false
         default: ''
   schedule:
@@ -26,7 +26,7 @@ on:
       - '.github/workflows/build-fedora.yml'
 
 env:
-  RELEASE: '44'
+  RELEASE: '45'
 
 jobs:
   build:

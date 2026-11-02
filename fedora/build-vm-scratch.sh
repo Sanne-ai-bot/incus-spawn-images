@@ -26,16 +26,16 @@ set -euo pipefail
 # Usage: build-vm-scratch.sh <output-dir> <vmlinuz>
 # Beside <vmlinuz>, build-kernel.sh vm leaves modules.builtin,
 # modules.builtin.modinfo and kernelrelease; all three are required.
-# Output: <output-dir>/fedora-44-<arch>-vm-scratch.tar.xz (+ .sha256), an Incus
+# Output: <output-dir>/fedora-45-<arch>-vm-scratch.tar.xz (+ .sha256), an Incus
 # unified tarball (metadata.yaml + rootfs.img, qcow2).
 #
-# Run as root in fedora:44, with: gdisk mtools e2fsprogs qemu-img xz kmod
+# Run as root in fedora:45, with: gdisk mtools e2fsprogs qemu-img xz kmod
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 OUTPUT="${1:?Usage: $0 <output-dir> <vmlinuz>}"
 KERNEL="${2:?Usage: $0 <output-dir> <vmlinuz>}"
 ARCH=$(uname -m)
-RELEASE=44
+RELEASE=45
 # The kernel's built-in root=PARTLABEL= (incus-spawn appliance/kernel/vm-<arch>.config).
 ROOT_PARTLABEL=isx-root
 DISK_SIZE=10G

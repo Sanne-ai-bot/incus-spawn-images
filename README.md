@@ -21,9 +21,15 @@ before `-vm-direct` existed: isx releases before the `SHA256SUMS.v2` reader
 any name containing `-vm` in it for the VM image, so one more line would overwrite
 a checksum they use. `SHA256SUMS.v2` lists all six, in the same format.
 
+Release tags and asset names carry the Fedora release (`fedora-45-<date>`,
+`fedora-45-<arch>.tar.xz`). An isx release downloads the asset names its built-in
+`tpl-minimal` names, so isx releases from before the move to Fedora 45 find no
+asset they can use in a `fedora-45-*` release and stay on their built-in Fedora
+44 release ([Sanne/incus-spawn#1862](https://github.com/Sanne/incus-spawn/issues/1862)).
+
 ## What's baked in
 
-The image is a Fedora 44 systemd rootfs bootstrapped directly with
+The image is a Fedora 45 systemd rootfs bootstrapped directly with
 `dnf --installroot` (see [`fedora/build.sh`](fedora/build.sh)).
 
 **Packages.** Installed with weak dependencies off (`install_weak_deps=False`)
@@ -227,25 +233,25 @@ installable. To lift it for one command, `dnf --setopt=excludepkgs= install
 **Kernel development** happens in a nested VM inside a `--kvm` branch
 (virtme-ng, or QEMU with `-kernel`), never by replacing the box's own kernel.
 
-**Built locally**, as root in a Fedora 44 container:
+**Built locally**, as root in a Fedora 45 container:
 
 ```bash
 fedora/build-vm-kernel.sh build/vm-kernel        # needs the kernel build tools
 mkdir -p output && sudo podman run --rm --privileged \
-  -v "$(pwd):/build:ro" -v "$(pwd)/output:/output" fedora:44 \
+  -v "$(pwd):/build:ro" -v "$(pwd)/output:/output" fedora:45 \
   bash -c 'dnf -y -q install gdisk mtools e2fsprogs qemu-img xz kmod &&
            bash /build/fedora/build-vm-scratch.sh /output /build/build/vm-kernel/vmlinuz'
-tar xJf output/fedora-44-$(uname -m)-vm-scratch.tar.xz -C output rootfs.img
+tar xJf output/fedora-45-$(uname -m)-vm-scratch.tar.xz -C output rootfs.img
 build/vm-kernel/incus-spawn/appliance/test-vm-kernel.sh build/vm-kernel/vmlinuz output/rootfs.img
 ```
 
 The last command is the boot test CI gates the image with; it needs QEMU, OVMF
 (AAVMF), `sgdisk`, mtools and `debugfs`. The output is
-`output/fedora-44-<arch>-vm-scratch.tar.xz` (+ `.sha256`). To try it in Incus
+`output/fedora-45-<arch>-vm-scratch.tar.xz` (+ `.sha256`). To try it in Incus
 by hand, put the root on virtio-blk and Secure Boot off:
 
 ```bash
-incus image import output/fedora-44-x86_64-vm-scratch.tar.xz --alias isx-scratch
+incus image import output/fedora-45-x86_64-vm-scratch.tar.xz --alias isx-scratch
 incus launch isx-scratch t1 --vm -c security.secureboot=false -d root,io.bus=virtio-blk
 ```
 
@@ -259,7 +265,7 @@ mkdir -p output && podman run --rm --privileged \
   -v "$(pwd):/build:ro" \
   -v "$(pwd)/output:/output" \
   -e OUTPUT_DIR=/output \
-  fedora:44 bash /build/fedora/build.sh
+  fedora:45 bash /build/fedora/build.sh
 ```
 
 **VM image** — runs directly on the host (needs root for `losetup` + `mount`):
@@ -271,8 +277,8 @@ sudo fedora/build-vm.sh output
 Requires `qemu-img`, `jq`, `curl`, `growpart`, and `e2fsprogs`/`xfsprogs`.
 
 Output files:
-- `output/fedora-44-<arch>.tar.xz` — container image (+ `.sha256`)
-- `output/fedora-44-<arch>-vm.tar.xz` — VM image (+ `.sha256`)
+- `output/fedora-45-<arch>.tar.xz` — container image (+ `.sha256`)
+- `output/fedora-45-<arch>-vm.tar.xz` — VM image (+ `.sha256`)
 
 ## CI
 
@@ -286,13 +292,13 @@ Triggers:
 - **Push** to `main` touching `fedora/**` or the workflow — builds artifacts
   only (no release).
 - **Scheduled** (1st, 11th, 21st, 03:17 UTC) — rebuilds for security updates and
-  publishes a release tagged `fedora-44-<YYYYMMDD>`.
-- **Manual dispatch** — optionally pass a `version` tag (e.g. `fedora-44-v2`)
+  publishes a release tagged `fedora-45-<YYYYMMDD>`.
+- **Manual dispatch** — optionally pass a `version` tag (e.g. `fedora-45-v1`)
   and publishes a release.
 
 A release never replaces the assets of a tag that already exists: incus-spawn
 pins their checksums. A later release on the same day, or a re-run, is tagged
-`fedora-44-<YYYYMMDD>-2`, `-3` and so on, and a requested `version` that exists
+`fedora-45-<YYYYMMDD>-2`, `-3` and so on, and a requested `version` that exists
 fails the release ([`release-tag.sh`](.github/scripts/release-tag.sh)).
 A run that fails after creating its tag, in "Create release", leaves the tag
 behind, and possibly a draft release (assets are uploaded before it is
@@ -346,9 +352,9 @@ doesn't override `tpl-minimal`, create a YAML file in
 # ~/.config/incus-spawn/images/test-base.yaml
 name: tpl-test-base
 description: Local base image test
-image: fedora-44-test
-image_url: file:///path/to/incus-spawn-images/output/fedora-44-{arch}.tar.xz
-vm_image_url: file:///path/to/incus-spawn-images/output/fedora-44-{arch}-vm.tar.xz
+image: fedora-45-test
+image_url: file:///path/to/incus-spawn-images/output/fedora-45-{arch}.tar.xz
+vm_image_url: file:///path/to/incus-spawn-images/output/fedora-45-{arch}-vm.tar.xz
 image_tag: local-test
 ```
 
@@ -373,11 +379,11 @@ To publish a new base image release:
    Base Image → Run workflow) or the CLI:
 
    ```bash
-   # Auto-generated date tag (fedora-44-YYYYMMDD, then -2, -3 on the same day):
+   # Auto-generated date tag (fedora-45-YYYYMMDD, then -2, -3 on the same day):
    gh workflow run build-fedora.yml
 
    # Explicit tag:
-   gh workflow run build-fedora.yml --field version=fedora-44-v7
+   gh workflow run build-fedora.yml --field version=fedora-45-v1
    ```
 
 2. **Wait for CI** — the workflow builds both `x86_64` and `aarch64` images and
@@ -414,7 +420,7 @@ the installed base image matches the expected tag and re-downloads if needed.
 isx update-base              # interactive — list releases, choose track-latest or pin
 isx update-base --latest     # always track the newest built-in version
 isx update-base --list       # list available releases without changing anything
-isx update-base fedora-44-v3 # pin to a specific release tag
+isx update-base fedora-45-v1 # pin to a specific release tag
 ```
 
 **Track latest** (default): no user override is written — `isx` uses whatever
@@ -427,7 +433,7 @@ If a newer version becomes available in a later `isx` release, the build will
 print a warning:
 
 ```
-Warning: base image is pinned to fedora-44-v3, but fedora-44-20260619 is available.
+Warning: base image is pinned to fedora-45-v1, but fedora-45-20261111 is available.
 Run 'isx update-base --latest' to update.
 ```
 
@@ -436,9 +442,9 @@ Run 'isx update-base --latest' to update.
 To reference a specific release directly in a template definition:
 
 ```yaml
-image: fedora-44-base
-image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-44-{arch}.tar.xz
-vm_image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-44-{arch}-vm.tar.xz
+image: fedora-45-base
+image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-45-{arch}.tar.xz
+vm_image_url: https://github.com/Sanne/incus-spawn-images/releases/download/<tag>/fedora-45-{arch}-vm.tar.xz
 image_sha256:
   x86_64: <sha256>
   aarch64: <sha256>
