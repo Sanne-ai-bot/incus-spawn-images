@@ -40,7 +40,7 @@ jobs:
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Install dependencies
         run: |
@@ -53,7 +53,7 @@ jobs:
       # when that file changes.
       - name: Restore the cached kernel
         id: kernel_cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: build/vm-kernel/
           key: vm-kernel-${{ matrix.arch }}-${{ hashFiles('fedora/build-vm-kernel.sh') }}
@@ -64,7 +64,7 @@ jobs:
 
       - name: Cache the kernel
         if: steps.kernel_cache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
+        uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: build/vm-kernel/
           key: ${{ steps.kernel_cache.outputs.cache-primary-key }}
@@ -99,7 +99,7 @@ jobs:
             build/vm-kernel/vmlinuz build/vm-image/rootfs.img ${{ matrix.arch }}
 
       - name: Upload VM artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fedora-${{ env.RELEASE }}-${{ matrix.arch }}-vm-scratch
           path: |
@@ -108,7 +108,7 @@ jobs:
 
       - name: Upload console logs and plots
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: vm-boot-${{ matrix.arch }}
           path: build/vm-boot/
