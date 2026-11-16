@@ -19,9 +19,10 @@ set -euo pipefail
 # libelf-dev libssl-dev (Fedora: gcc make flex bison bc elfutils-libelf-devel
 # openssl-devel).
 
-# A commit, not a tag, until an incus-spawn release carries `build-kernel.sh vm`;
-# then the tag of that release. A change to the fragments reaches this image only
-# through a bump here.
+# A commit on incus-spawn's main, never a tag. A change to the fragments reaches
+# this image only through a bump here, which incus-spawn's upstream watch proposes
+# (upstream/manifest.yaml, item isx-ref): the newest commit on main that changed
+# the kernel's script, its fragments or the boot test.
 ISX_REPO=https://github.com/Sanne/incus-spawn.git
 ISX_REF=07c20e488230ee2e3b52c5d0723553432de3faee
 

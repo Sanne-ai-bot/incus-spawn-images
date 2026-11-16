@@ -1,0 +1,47 @@
+# Watched pins of this repository (Sanne/incus-spawn#2210). The upstream watch runs in
+# Sanne/incus-spawn: its upstream-watch.yml plans this manifest with the engine at the commit
+# upstream/engine.ref names and opens each bump PR here as the isx-upstream app, and this
+# repository's upstream-verify.yml runs that same engine on every PR. The rules are the engine's
+# (`upstream.sh validate`, design/upstream.md in incus-spawn); a mechanical item's PR is merged by
+# the bot only once it is exactly the engine's regeneration and CI passed.
+repo: Sanne/incus-spawn-images
+app:
+  # The GitHub App that opens bump PRs, the one incus-spawn's manifest names.
+  login: isx-upstream[bot]
+items:
+  # The incus-spawn commit the VM image's kernel is built from: the newest commit on incus-spawn's
+  # main that changed what build-vm-kernel.sh reads, the kernel's script and fragments and the boot
+  # test CI gates the image with. A commit that changed none of them moves nothing. The PR's
+  # build-vm-scratch.yml builds that kernel and boots it.
+  isx-ref:
+    class: mechanical
+    within: any
+    cooling: 0
+    source:
+      type: git-main-paths
+      repo: Sanne/incus-spawn
+      paths: [appliance/kernel/build-kernel.sh, 'appliance/kernel/*.config', appliance/test-vm-kernel.sh]
+      pin:
+        file: fedora/build-vm-kernel.sh
+        text: "ISX_REF={version}\n"
+    verify:
+      type: main-commit
+    files: [fedora/build-vm-kernel.sh]
+    fields: [commit]
+  # The incus-spawn commit whose upstream/engine plans and verifies this manifest: the newest commit
+  # on incus-spawn's main that changed the engine.
+  engine:
+    class: mechanical
+    within: any
+    cooling: 0
+    source:
+      type: git-main-paths
+      repo: Sanne/incus-spawn
+      paths: [upstream/engine]
+      pin:
+        file: upstream/engine.ref
+        text: "{version}\n"
+    verify:
+      type: main-commit
+    files: [upstream/engine.ref]
+    fields: [commit]

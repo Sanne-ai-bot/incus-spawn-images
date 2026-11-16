@@ -145,7 +145,9 @@ does, which a nested Incus in a `--kvm` branch needs.
 **The kernel is the image's.** It is built by
 [`fedora/build-vm-kernel.sh`](fedora/build-vm-kernel.sh) from incus-spawn's
 `appliance/kernel` (`build-kernel.sh vm`) at a pinned commit, so its config has
-one home; a fragment change reaches this image through a bump of that pin. It
+one home; a fragment change reaches this image through a bump of that pin, which
+incus-spawn's upstream watch proposes as a PR here (item `isx-ref` of
+[`upstream/manifest.yaml`](upstream/manifest.yaml)). It
 has no modules and no virtio-scsi, so the root disk must be on virtio-blk
 (`io.bus=virtio-blk`); isx sets that from step 4 of
 [Sanne/incus-spawn#1255](https://github.com/Sanne/incus-spawn/issues/1255) on,

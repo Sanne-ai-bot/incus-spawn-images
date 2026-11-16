@@ -1,0 +1,55 @@
+name: Upstream verify
+
+# The upstream-verify check of this repository (Sanne/incus-spawn#2210, design/upstream.md
+# "Sibling repositories" there): on every PR, each item of upstream/manifest.yaml whose pin the PR
+# changes must be what its source gives, and a PR by the isx-upstream app must be, whole, the
+# engine's regeneration of one item. The engine is incus-spawn's upstream/engine at the commit
+# upstream/engine.ref names on the default branch, never the PR's: the same engine incus-spawn's
+# watch planned the bump with. It passes at once when no item is touched, so it can be required.
+#
+# pull_request_target, not pull_request: a check that decides what the bot may merge must not run
+# the PR's own copy of itself. This runs the default branch's pin of the engine with a read-only
+# token and no secrets, and reads the PR only as git trees and through the API. Never add a step
+# here that runs, builds or sources anything from the PR.
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  upstream-verify:
+    name: upstream-verify
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Read the engine this repository pins
+        id: pin
+        run: |
+          set -euo pipefail
+          ref="$(tr -d '\n' < upstream/engine.ref)"
+          [[ "$ref" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::upstream/engine.ref is not a commit"; exit 1; }
+          echo "ref=$ref" >> "$GITHUB_OUTPUT"
+
+      - name: Check out that engine
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: Sanne/incus-spawn
+          ref: ${{ steps.pin.outputs.ref }}
+          path: _engine
+          persist-credentials: false
+
+      - name: Verify the PR's pins against their sources
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: UPSTREAM_REPO_ROOT="$GITHUB_WORKSPACE" _engine/upstream/engine/upstream.sh verify-pr "$PR"
